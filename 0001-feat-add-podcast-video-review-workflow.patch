@@ -1,0 +1,4360 @@
+From 160b7fb7e8ac284a93555621ddc8831056f73bdd Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 6 Sep 2026 13:29:56 -0400
+Subject: [PATCH] feat: add podcast video review workflow
+
+---
+ README.md                         |   32 +-
+ docs/API.md                       |   60 +-
+ docs/ROADMAP.md                   |    4 +-
+ docs/VERIFICATION.md              |   65 +-
+ drizzle/0002_peaceful_prima.sql   |   33 +
+ drizzle/meta/0002_snapshot.json   | 1431 +++++++++++++++++++++++++++++
+ drizzle/meta/_journal.json        |    7 +
+ scripts/seed.ts                   |    1 +
+ src/app/api/media/[id]/route.ts   |    1 +
+ src/app/api/v1/[...path]/route.ts |   12 +-
+ src/app/globals.css               |  152 +++
+ src/components/hub.tsx            |   35 +-
+ src/components/producer.tsx       |  599 +++++++++---
+ src/components/review.tsx         |  106 ++-
+ src/components/types.ts           |   24 +-
+ src/db/schema.ts                  |   35 +-
+ src/lib/client-video-upload.ts    |  145 +++
+ src/lib/media.ts                  |  239 ++++-
+ src/lib/platform-config.ts        |   28 +
+ src/lib/service.ts                |  263 ++++--
+ src/lib/validation.ts             |   42 +-
+ tests/workflow.test.ts            |  153 ++-
+ 22 files changed, 3121 insertions(+), 346 deletions(-)
+ create mode 100644 drizzle/0002_peaceful_prima.sql
+ create mode 100644 drizzle/meta/0002_snapshot.json
+ create mode 100644 src/lib/client-video-upload.ts
+ create mode 100644 src/lib/platform-config.ts
+
+diff --git a/README.md b/README.md
+index a5df2c3..7199c0e 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # PLIRIS Social Review Hub
+ 
+-A private, personal prototype owned by Mac/Jemar. Producers prepare social content; reviewers approve an exact Instagram, Facebook or LinkedIn version. No social network is connected, and approval never schedules or publishes content.
++A private, personal prototype owned by Mac/Jemar. Producers prepare social and podcast content; reviewers approve an exact Instagram, Facebook, LinkedIn, YouTube or TikTok version. No social network is connected, and approval never schedules or publishes content.
+ 
+ This is not an official PLIRIS operational system. No Trello, WCS, HubSpot, HQ workflow or priority register is modified. All supplied artwork and seed copy are generic samples.
+ 
+@@ -11,11 +11,11 @@ Next.js App Router, strict TypeScript, Tailwind CSS, shadcn/ui-style Radix compo
+ The authenticated interface calls `/api/v1/`. Route handlers authenticate and validate requests, then call the same transactional domain services exercised by integration tests. Producers never write directly to database tables from the browser.
+ 
+ - Content items contain the overall idea and operational metadata.
+-- Platform variants belong to one item, unique per platform.
+-- Immutable versions snapshot caption, CTA, destination and ordered image references with alt text.
++- Platform adaptations belong to one item and are unique per platform and format. Supported formats are image post, carousel, short video and long video, with platform-appropriate choices.
++- Immutable versions snapshot the final caption/description, title, script/transcript, chapters, tags, CTA, destination, images, video and thumbnail.
+ - Decisions reference the exact version and reviewer. There is one final decision per version.
+ - Comments, audit events and manual publishing records preserve their version context.
+-- Media metadata lives in PostgreSQL. Production images are authenticated Cloudinary assets.
++- Media metadata lives in PostgreSQL. Production images and videos are authenticated Cloudinary assets.
+ 
+ Drizzle schema: `src/db/schema.ts`. Migrations include relational constraints, review-queue indexes and triggers preventing edits/deletes to historical records. The production driver uses Neon WebSockets for interactive transactions and row locks. Local development uses explicitly enabled PGlite (embedded PostgreSQL) with the **same schema and services**, not SQLite or an in-memory mock. It is not used on Vercel.
+ 
+@@ -38,7 +38,7 @@ Open `http://localhost:3000`. Setup creates a local database, applies the checke
+ 
+ Setup refuses to overwrite an existing `.env`. To use an existing configuration, run `npm run db:migrate` and `npm run db:seed`. Seed data is idempotent by internal reference; it does not overwrite existing items or rotate passwords. The seed week is the next Monday–Friday. It includes ready-for-review, approved, changes-requested, rejected and manually recorded published examples, plus a three-slide carousel. All publication records are clearly sample records and do not correspond to real posts.
+ 
+-The local upload fallback saves images in `.local/media`, delivers them through the protected media route, and is disabled when `DATABASE_URL` exists or on Vercel. Back up `.local` only for local demo continuity; do not deploy it. Only one local process should open the same PGlite directory at a time.
++The local upload fallback saves small images and videos in `.local/media`, delivers them through the protected media route, and is disabled when `DATABASE_URL` exists or on Vercel. Back up `.local` only for local demo continuity; do not deploy it. Only one local process should open the same PGlite directory at a time.
+ 
+ ## Production configuration
+ 
+@@ -88,24 +88,24 @@ Roles must be ADMIN, PRODUCER or REVIEWER. Existing email addresses are preserve
+ 
+ 1. Create/select a Cloudinary environment with an available free plan. Do not upgrade or enable billable add-ons.
+ 2. Configure the three Cloudinary environment variables on the server.
+-3. The application uploads images server-side using `type: authenticated`, random immutable public IDs, `overwrite: false`, and the original file. No unsigned browser upload preset is needed.
+-4. Image metadata and versioned references are persisted in PostgreSQL. Image binaries are never stored in Neon.
+-5. `/api/media/[id]` authenticates the request, obtains a signed transformed Cloudinary URL on the server and streams the image. Cloudinary URLs are not exposed as application links. Responses use `private, no-store`.
+-6. Original assets remain untouched. Thumbnail and full preview transformations use width limits and automatic format/quality. Confirm authenticated transformations are enabled for your Cloudinary environment before the live acceptance test.
++3. Images upload server-side. Videos obtain a short-lived, server-signed upload request and upload directly from the browser to Cloudinary in 20 MB chunks, avoiding Vercel request-size limits. No unsigned upload preset is needed and the API secret never reaches the browser.
++4. Uploads use `type: authenticated`, random immutable public IDs and `overwrite: false`. Media metadata and versioned references are persisted in PostgreSQL; binaries are never stored in Neon.
++5. `/api/media/[id]` authenticates delivery. Images are streamed through the protected route; videos redirect to an authenticated signed Cloudinary delivery URL after authorization. Responses use `private, no-store`.
++6. Original assets remain untouched. Thumbnail, poster and preview transformations use bounded dimensions and automatic format/quality. Confirm authenticated transformations are enabled for your Cloudinary environment before the live acceptance test.
+ 
+-JPEG, PNG and WebP uploads are limited to 3 MB per image and 20 images per variant. The size limit leaves room for multipart overhead under common serverless request limits. SVG and arbitrary URLs are not accepted for upload. Requests require a producer identity and alt text. Local demo dimensions currently use zero; production metadata uses Cloudinary's actual dimensions.
++JPEG, PNG and WebP uploads are limited to 3 MB per image and 20 images per adaptation. MP4, MOV and WebM review videos are limited to 1 GB in production. The local fallback intentionally accepts only files under 3 MB. SVG and arbitrary URLs are not accepted. Uploads require a producer identity and descriptive text. Cloudinary supplies production dimensions and video duration.
+ 
+ ## Review workflow
+ 
+ 1. Sign in as Mac and open Content studio → Create content.
+-2. Add a platform adaptation, caption, CTA, destination and images. Move images left/right to set carousel order.
++2. Add a platform adaptation and select a supported format. For image posts/carousels, add images and set carousel order. For video, upload a portrait or landscape review copy, optional/required thumbnail, final description, script/transcript, and YouTube metadata where applicable.
+ 3. Save the draft, open it and select Submit for review.
+ 4. Sign in as John. The review queue lists only current versions needing review, ordered by planned time.
+ 5. Inspect the full caption, carousel, destination, planned date and version. Approve, or provide required feedback for revision/rejection.
+ 6. Mac opens Revisions and edits the variant. A substantive change creates a new immutable version. A reviewed adaptation returns to Ready for review; it never inherits approval. Previous feedback stays with the previous version.
+ 7. Re-approve the new version. Other platforms remain untouched.
+ 
+-Changing caption, CTA, URL, image selection or carousel order creates a version. A no-op save does not. Draft edits also create immutable versions but remain draft until submission. Planned posting time, content title, campaign, concept summary and reference are operational metadata and do not change the approved payload. The approved rendered payload is defined as caption, CTA, URL and ordered media/alt text; those are reconstructable historically.
++Changing any approved payload field—including caption, title, script, chapters, tags, CTA, URL, image order, video or thumbnail—creates a version. A no-op save does not. Draft edits also create immutable versions but remain draft until submission. Planned posting time, content title, campaign, concept summary and reference are operational metadata and do not change the approved payload. Every reviewed asset and field is reconstructable historically.
+ 
+ Approval and publishing states are separate. Manual scheduling/publication records require current approval and an explicit producer action. Editing approved content resets the current publishing state to Unscheduled, while the prior publishing record stays in history. Published content is not edited on a social network by this app.
+ 
+@@ -113,7 +113,7 @@ The coverage window is rolling **168 hours**, including now and excluding the ex
+ 
+ ## Security and integrity
+ 
+-- Authenticated page, API and image routes; no public signup or default production password.
++- Authenticated page, API and media routes; no public signup or default production password.
+ - Database session lookup and server-side role enforcement; no client-side role trust.
+ - Same-origin checks for session-authenticated API mutations and Better Auth's origin protection on sign-in endpoints.
+ - Integration bearer keys use constant-time comparison. The key grants producer capability only and cannot approve. Rotate/remove the environment key to revoke access; use a dedicated producer account for a clear audit identity.
+@@ -133,13 +133,13 @@ npm test
+ npm run build
+ ```
+ 
+-Tests use isolated embedded PostgreSQL and the **real migrations, Better Auth handlers and API handlers**. They create/login the producer and reviewer, upload fixtures, create/submit three platforms, approve Facebook/LinkedIn, request Instagram changes, reorder its carousel, preserve version-1 feedback, approve version 2 and verify calendar/coverage/publishing state. They also exercise stale requests, missing reasons, rejected content, unauthorized roles, cross-origin writes, protected media, historical comments, database mutation guards and disabled signup.
++Tests use isolated embedded PostgreSQL and the **real migrations, Better Auth handlers and API handlers**. They cover the original Instagram/Facebook/LinkedIn workflow plus YouTube long-form and TikTok short-form video. The video scenario verifies upload authorization, thumbnails, exact scripts and titles, independent approval, revision history and invalid platform/format rejection. The suite also exercises stale requests, missing reasons, unauthorized roles, cross-origin writes, protected media, historical comments, database mutation guards and disabled signup.
+ 
+ See `docs/VERIFICATION.md` for the actual run results and outstanding live-provider/browser checks. Passing local API integration tests does not claim a live Neon/Cloudinary/Vercel test passed.
+ 
+ ## GitHub and Vercel
+ 
+-Target private repository: `pliris-social-review-hub`. Keep `main` deployable; use feature branches for changes after initial adoption. Commit the lockfile, migrations and tests, never `.env` or `.local`. No GitHub Actions workflow is enabled automatically, avoiding unintended minutes consumption; run the verification commands locally or add a budget-controlled workflow later.
++Repository: `pliris-social-review-hub`. Keep `main` deployable; use feature branches for changes after initial adoption. Commit the lockfile, migrations and tests, never `.env` or `.local`. No GitHub Actions workflow is enabled automatically, avoiding unintended minutes consumption; run the verification commands locally or add a budget-controlled workflow later. If the repository is temporarily public for collaboration, return it to private after the branch is available.
+ 
+ 1. Push the reviewed source to a **private** GitHub repository.
+ 2. Import it in Vercel as a Next.js project; use Node.js 22+ and the default build/output settings. `vercel.json` explicitly selects Next.js and the build command.
+@@ -147,6 +147,8 @@ Target private repository: `pliris-social-review-hub`. Keep `main` deployable; u
+ 4. Apply migrations and provision accounts from a trusted local environment before first sign-in.
+ 5. Deploy and complete the live-provider acceptance test in `docs/VERIFICATION.md`.
+ 
++For an existing deployment, run `npm run db:migrate` against its Neon database before promoting this video-capability branch. The migration preserves old approvals, identifies existing multi-image variants as carousels and enriches their historical image snapshots.
++
+ No paid plan has been enabled or requested. This is a personal prototype. If PLIRIS formally adopts it, reassess Vercel's then-current commercial-use/plan requirements and all provider quotas before production use. No guarantee is made about future free-tier availability.
+ 
+ ## Documentation and Phase 2
+diff --git a/docs/API.md b/docs/API.md
+index 5eb634a..26e19e7 100644
+--- a/docs/API.md
++++ b/docs/API.md
+@@ -18,7 +18,7 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
+ | POST   | `/content`                                | Producer creates idea                                                      |
+ | GET    | `/content/:id`                            | Content with all current variants                                          |
+ | PATCH  | `/content/:id`                            | Producer edits operational metadata                                        |
+-| POST   | `/content/:id/platform-variants`          | Producer creates one platform draft                                        |
++| POST   | `/content/:id/platform-variants`          | Producer creates one platform/format draft                                 |
+ | PATCH  | `/platform-variants/:id`                  | Producer creates a new payload version if changed                          |
+ | POST   | `/platform-variants/:id/plan`             | Producer changes operational planned time                                  |
+ | POST   | `/platform-variants/:id/submit-review`    | Producer submits draft/in-production version                               |
+@@ -32,9 +32,21 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
+ | GET    | `/revisions`                              | Current Changes requested variants                                         |
+ | GET    | `/calendar?start=ISO&end=ISO`             | Planned variants in inclusive-start/exclusive-end range                    |
+ | GET    | `/coverage`                               | Next 168 hours coverage and earliest unapproved adaptation                 |
+-| POST   | `/media`                                  | Producer multipart image upload: `file`, `altText`                         |
++| POST   | `/media`                                  | Producer multipart image upload; local demo also accepts small videos      |
++| POST   | `/media/sign-upload`                      | Producer requests a signed direct Cloudinary video upload                  |
++| POST   | `/media/complete-video`                   | Producer verifies and records a completed Cloudinary video                 |
+ 
+-Images are read through authenticated `GET /api/media/:id`; append `?thumb=1` for a smaller transformed preview. Ordered `version.media` entries contain asset IDs and immutable alt text.
++Media is read through authenticated `GET /api/media/:id`; append `?thumb=1` for an image thumbnail or video poster. Image payloads are streamed, while authorized production video requests redirect to authenticated Cloudinary delivery. Ordered `version.media`, `version.video` and `version.thumbnail` entries contain immutable metadata snapshots.
++
++Supported platform/format combinations:
++
++| Platform  | Formats                                       |
++| --------- | --------------------------------------------- |
++| Instagram | Image post, carousel, short video             |
++| Facebook  | Image post, carousel, short video, long video |
++| LinkedIn  | Image post, carousel, long video              |
++| YouTube   | Short video, long video                       |
++| TikTok    | Short video                                   |
+ 
+ ## Payloads
+ 
+@@ -55,6 +67,7 @@ Create variant:
+ ```json
+ {
+   "platform": "INSTAGRAM",
++  "contentFormat": "CAROUSEL",
+   "plannedPublishAt": "2026-09-07T16:00:00.000Z",
+   "caption": "Final caption",
+   "ctaText": "Learn more",
+@@ -63,15 +76,41 @@ Create variant:
+ }
+ ```
+ 
++Create a YouTube podcast video:
++
++```json
++{
++  "platform": "YOUTUBE",
++  "contentFormat": "LONG_VIDEO",
++  "plannedPublishAt": "2026-09-09T16:00:00.000Z",
++  "headline": "Final podcast episode title",
++  "caption": "Final YouTube description",
++  "script": "Final transcript or approved script...",
++  "chapters": "00:00 Introduction\n01:42 Main topic",
++  "tags": "PLIRIS, podcast",
++  "ctaText": "Subscribe",
++  "ctaUrl": "https://example.com/",
++  "mediaIds": [],
++  "videoId": "video-asset-id",
++  "thumbnailId": "thumbnail-asset-id"
++}
++```
++
+ Edit variant (all payload fields are submitted; ordered `mediaIds` are authoritative):
+ 
+ ```json
+ {
+   "expectedVersionId": "current-version-id",
+   "caption": "Revised caption",
++  "headline": "",
++  "script": "",
++  "chapters": "",
++  "tags": "",
+   "ctaText": "Learn more",
+   "ctaUrl": "https://example.com/",
+-  "mediaIds": ["asset-id-2", "asset-id-1"]
++  "mediaIds": ["asset-id-2", "asset-id-1"],
++  "videoId": null,
++  "thumbnailId": null
+ }
+ ```
+ 
+@@ -84,7 +123,16 @@ Review / submission:
+ }
+ ```
+ 
+-`reason` is optional for approval; required/nonblank for request-revision and reject. Submit-review only requires `expectedVersionId`. Reviewed content must have a nonblank caption and at least one image. Each version gets one final decision; revisiting a rejected/approved/changes-requested version requires a genuinely changed new version.
++`reason` is optional for approval; required/nonblank for request-revision and reject. Submit-review only requires `expectedVersionId`. Image formats require at least one image; video formats require a video. YouTube requires a title, and YouTube long-form requires a thumbnail. Each version gets one final decision; revisiting a rejected/approved/changes-requested version requires a genuinely changed new version.
++
++### Direct video upload
++
++1. Request upload authorization from `/media/sign-upload` with `filename`, `mimeType` and `bytes`.
++2. In production, send the file directly to the returned Cloudinary URL using the returned signed fields. Files over 20 MB may be sent in sequential chunks sharing one upload ID.
++3. Send Cloudinary's final `public_id`, `version`, `signature`, dimensions, duration and file metadata to `/media/complete-video`.
++4. The server verifies Cloudinary's response signature before recording the asset. A forged or incomplete completion response is rejected.
++
++The production limit is 1 GB and accepted MIME types are MP4, QuickTime/MOV and WebM. The API secret is server-only.
+ 
+ Comment:
+ 
+@@ -115,7 +163,7 @@ Supported publishing states: UNSCHEDULED, READY_TO_SCHEDULE, SCHEDULED, PUBLISHE
+ - 403 incorrect role or origin.
+ - 404 missing resource/endpoint.
+ - 409 stale version, invalid workflow state, duplicate platform/reference/decision.
+-- 413 body too large.
++- 413 body too large or direct-upload limit exceeded.
+ - 422 invalid input, missing media or required reason.
+ - 503 Cloudinary configuration unavailable.
+ - 500 generic internal failure; database credentials/details are not returned.
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 295dfba..db6eb72 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -6,6 +6,8 @@ Connect the private repository, Neon, Cloudinary and Vercel; run the live-provid
+ 
+ ## P1
+ 
++- Podcast episode bundles that link one source episode to several independently reviewed short clips.
++- Optional transcript import/caption-file attachment after the source and review rules are agreed.
+ - User/account maintenance UI with explicit admin authorization, reviewer assignment including Royal.
+ - Version comparisons, more detailed audit filtering, date/platform filters on content studio.
+ - Calendar drag/drop only after agreeing which date changes require review.
+@@ -21,7 +23,7 @@ Connect the private repository, Neon, Cloudinary and Vercel; run the live-provid
+ - Outgoing webhook delivery with retries and revocable service identities.
+ - Meta/Instagram/LinkedIn publishing or scheduling, only behind explicit authorization.
+ - Actual performance data; keep marketing metrics separate from review KPIs.
+-- Optional AI content/image generation, video workflow and notifications only after cost review.
++- Optional AI content/image/video generation and notifications only after cost review.
+ - Multi-tenant architecture, billing and native apps only if product adoption justifies them.
+ 
+ Formal PLIRIS adoption requires a separate ownership, hosting/commercial-plan, source-of-truth and governance decision. Do not create Trello cards, modify WCS or change department priorities as part of this personal prototype.
+diff --git a/docs/VERIFICATION.md b/docs/VERIFICATION.md
+index e7401c2..5f73a22 100644
+--- a/docs/VERIFICATION.md
++++ b/docs/VERIFICATION.md
+@@ -1,6 +1,6 @@
+ # Build and verification receipt
+ 
+-Date: 6 September 2026. Product: PLIRIS Social Review Hub. Owner: Mac/Jemar. Personal prototype only.
++Date: 7 September 2026. Product: PLIRIS Social Review Hub. Owner: Mac/Jemar. Personal prototype only.
+ 
+ ## Status
+ 
+@@ -8,39 +8,39 @@ Application source is implemented and builds locally. The PostgreSQL-backed auth
+ 
+ ## P0 checklist
+ 
+-| Requirement                                            | Current state                                                                                 |
+-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+-| Next.js, App Router, strict TypeScript                 | Implemented; production build passes                                                          |
+-| Tailwind, shadcn/ui/Radix button and dialog primitives | Implemented; themed responsive UI                                                             |
+-| Neon connectivity                                      | Production adapter configured in code; live connection pending                                |
+-| Drizzle schema and migrations                          | Implemented; real PostgreSQL migrations pass locally                                          |
+-| Authentication, no public signup                       | Better Auth; login and denied-signup integration tests pass                                   |
+-| Admin/Producer and Reviewer roles                      | Implemented; server-side role tests pass                                                      |
+-| Content items and three platform variants              | Implemented; create, read and metadata update API plus producer UI                            |
+-| Immutable versions                                     | Implemented; database mutation guards and historical reconstruction tested                    |
+-| Cloudinary upload and delivery                         | Authenticated server-side integration implemented; live credentials pending                   |
+-| Local media fallback                                   | Explicit local demo only; upload/delivery API exercised                                       |
+-| Carousel support and ordering                          | Editor, preview arrows and thumbnails implemented; ordered snapshots tested                   |
+-| Submit for review and John review queue                | Implemented and API-tested                                                                    |
+-| Platform preview                                       | Instagram/Facebook/LinkedIn approximate presentations implemented                             |
+-| Approve / request revision / reject                    | Implemented; required feedback and exact version checks pass                                  |
+-| New review after payload edits                         | Implemented; previous approval remains historical                                             |
+-| Independent platform approvals                         | Three-platform test passes                                                                    |
+-| Weekly calendar and seven-day coverage                 | Implemented; API state and boundary calculations tested                                       |
+-| Revision queue and history/audit                       | Implemented; feedback and historical comment tests pass                                       |
+-| API v1 and producer integration token                  | Implemented; authorization and revocation tested                                              |
+-| Five ideas / 15 sample adaptations                     | Seed script applied successfully locally                                                      |
+-| Required complete user journey                         | Authenticated API integration passes; signed-in browser journey pending                       |
+-| Deployment readiness                                   | Build/config/docs provided; live deployment remains blocked by external setup                 |
+-| Private GitHub repository                              | Repository supplied by Mac; initially public with write access, then returned 404; private visibility/access must be verified before upload |
+-| Vercel deployment                                      | Not performed; no URL or credentials available                                                |
++| Requirement                                            | Current state                                                                              |
++| ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
++| Next.js, App Router, strict TypeScript                 | Implemented; production build passes                                                       |
++| Tailwind, shadcn/ui/Radix button and dialog primitives | Implemented; themed responsive UI                                                          |
++| Neon connectivity                                      | Production adapter configured in code; live connection pending                             |
++| Drizzle schema and migrations                          | Implemented; real PostgreSQL migrations pass locally                                       |
++| Authentication, no public signup                       | Better Auth; login and denied-signup integration tests pass                                |
++| Admin/Producer and Reviewer roles                      | Implemented; server-side role tests pass                                                   |
++| Five platforms and four content formats                | Instagram, Facebook, LinkedIn, YouTube and TikTok with platform-valid format choices       |
++| Immutable versions                                     | Implemented; database mutation guards and historical reconstruction tested                 |
++| Cloudinary image/video upload and delivery             | Authenticated images plus signed direct video upload implemented; live video check pending |
++| Local media fallback                                   | Explicit local demo only; upload/delivery API exercised                                    |
++| Carousel support and ordering                          | Editor, preview arrows and thumbnails implemented; ordered snapshots tested                |
++| Submit for review and John review queue                | Implemented and API-tested                                                                 |
++| Platform preview                                       | Five-platform image/video playback, metadata and script review implemented                 |
++| Approve / request revision / reject                    | Implemented; required feedback and exact version checks pass                               |
++| New review after payload edits                         | Implemented; previous approval remains historical                                          |
++| Independent platform approvals                         | Image and video cross-platform tests pass                                                  |
++| Weekly calendar and seven-day coverage                 | Implemented; API state and boundary calculations tested                                    |
++| Revision queue and history/audit                       | Implemented; feedback and historical comment tests pass                                    |
++| API v1 and producer integration token                  | Implemented; authorization and revocation tested                                           |
++| Five ideas / 15 sample adaptations                     | Seed script applied successfully locally                                                   |
++| Required complete user journey                         | Authenticated API integration passes; signed-in browser journey pending                    |
++| Deployment readiness                                   | Build/config/docs provided; live deployment remains blocked by external setup              |
++| GitHub repository                                      | Existing repository supplied by Mac; feature branch upload is tracked separately           |
++| Vercel deployment                                      | Existing app reported deployed by Mac; this feature still needs a preview/live acceptance  |
+ 
+ ## Local checks
+ 
+ - TypeScript strict check: passed.
+ - Production build: passed (Next.js App Router pages and API route handlers).
+ - Fresh migration and seed: passed; five sample ideas / fifteen variants.
+-- Automated tests: **18 passed / 18**, including the required three-platform API workflow, integration-key revocation and competing decisions.
++- Automated tests: **20 passed / 20**, including the original three-platform workflow, YouTube/TikTok video independence, platform/format validation, integration-key revocation and competing decisions.
+ - Live browser: protected root redirects to sign-in; login page DOM and desktop appearance verified.
+ - Full authenticated browser UI and mobile checks: not completed. Browser sign-in uses a secure user credential handoff; automated API sign-in does not establish the browser session. No auth bypass was added.
+ - Live Neon WebSocket connection, Cloudinary signed upload/delivery and Vercel runtime: not run without account configuration.
+@@ -62,6 +62,8 @@ Application source is implemented and builds locally. The PostgreSQL-backed auth
+ 13. Calendar and API current state agree; coverage is 3/3, 100%.
+ 14. Unauthorized or stale decision requests cannot alter state.
+ 
++Additional video scenario: Mac uploads a YouTube long-form review video and thumbnail plus a TikTok short. John approves both. Mac revises only the YouTube title and exact transcript; YouTube returns to review while TikTok remains approved, and YouTube version 1 stays reconstructable. An invalid YouTube image-post adaptation is rejected.
++
+ Additional checks: approved-to-new-version invalidation, blank feedback, producer/admin review denial, reviewer production denial, cross-origin rejection, private media, rejected Instagram independence, invalid destination URL, immutable database history, historical comments, exact coverage window boundaries, public signup denial, scoped service key/revocation and competing review decisions.
+ 
+ ## Live-provider acceptance before calling P0 fully complete
+@@ -71,17 +73,18 @@ Additional checks: approved-to-new-version invalidation, blank feedback, produce
+ 3. Deploy privately/auth-gated and open a fresh unauthenticated browser: `/` must redirect to `/login`; `/api/v1/content` and a known media URL must return 401.
+ 4. Perform the full 32-step handoff scenario in the browser, including actual Cloudinary upload, carousel ordering, reviewer decisions, version history and no automatic publishing.
+ 5. Open the same variant in two tabs. Approve/edit one, then attempt a stale action in the other; expect a conflict and no overwritten history.
+-6. Confirm authenticated Cloudinary transformations deliver both thumbnails and full images while originals remain unchanged.
++6. Confirm authenticated Cloudinary transformations deliver thumbnails, full images, video posters and playable portrait/landscape videos while originals remain unchanged.
+ 7. Verify mobile/keyboard usability for queue, modal, carousel, caption, actions and editor. Confirm usable rendering at 200% text enlargement.
+ 8. Check Vercel logs for unexpected errors without disclosing secrets. Confirm no public signup, billing upgrade or social publishing integration exists.
+ 9. Mac reviews the final prototype before John is invited. No message has been sent to John.
+ 
+ ## Known limitations
+ 
+-- No deployed application yet. GitHub repository supplied by Mac; source upload awaits restored connector access and private visibility verification.
++- Existing main deployment predates the video feature; verify the feature preview before promoting it.
+ - Live providers and signed-in browser UI still require acceptance.
+ - Operational metadata changes (title/campaign/reference/planned dates) are audited, not versioned as social payload.
+-- Local upload metadata uses zero dimensions; Cloudinary supplies actual dimensions in production.
++- The local demo accepts only small video fixtures and reports detected media with limited metadata; Cloudinary supplies production dimensions and duration.
++- A single content item currently supports one adaptation per platform/format. Model separate clips as separate content items until podcast episode bundles are added.
+ - API currently loads the small prototype dataset without pagination; it is not intended for large-scale ingestion yet.
+ - User management is a CLI; no email reset/invitation or notification system.
+ - Archive shows currently published variants; earlier publication records after later edits remain available in variant history.
+diff --git a/drizzle/0002_peaceful_prima.sql b/drizzle/0002_peaceful_prima.sql
+new file mode 100644
+index 0000000..a3a740a
+--- /dev/null
++++ b/drizzle/0002_peaceful_prima.sql
+@@ -0,0 +1,33 @@
++CREATE TYPE "public"."content_format" AS ENUM('IMAGE_POST', 'CAROUSEL', 'SHORT_VIDEO', 'LONG_VIDEO');--> statement-breakpoint
++ALTER TYPE "public"."platform" ADD VALUE 'YOUTUBE';--> statement-breakpoint
++ALTER TYPE "public"."platform" ADD VALUE 'TIKTOK';--> statement-breakpoint
++DROP INDEX "one_platform_per_content";--> statement-breakpoint
++ALTER TABLE "media_assets" ADD COLUMN "duration_ms" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
++ALTER TABLE "platform_variants" ADD COLUMN "content_format" "content_format" DEFAULT 'IMAGE_POST' NOT NULL;--> statement-breakpoint
++UPDATE "platform_variants" AS variant
++SET "content_format" = 'CAROUSEL'
++FROM "platform_variant_versions" AS version
++WHERE variant."current_version_id" = version."id"
++  AND jsonb_array_length(version."media_snapshot") > 1;--> statement-breakpoint
++UPDATE "platform_variant_versions" AS version
++SET "media_snapshot" = COALESCE((
++  SELECT jsonb_agg(
++    item.value || jsonb_build_object(
++      'resourceType', COALESCE(asset."resource_type", 'image'),
++      'mimeType', COALESCE(asset."mime_type", ''),
++      'width', COALESCE(asset."width", 0),
++      'height', COALESCE(asset."height", 0),
++      'durationMs', 0
++    )
++    ORDER BY item.ordinality
++  )
++  FROM jsonb_array_elements(version."media_snapshot") WITH ORDINALITY AS item(value, ordinality)
++  LEFT JOIN "media_assets" AS asset ON asset."id" = item.value->>'id'
++), '[]'::jsonb);--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "headline_snapshot" text DEFAULT '' NOT NULL;--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "script_snapshot" text DEFAULT '' NOT NULL;--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "chapters_snapshot" text DEFAULT '' NOT NULL;--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "tags_snapshot" text DEFAULT '' NOT NULL;--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "video_snapshot" jsonb;--> statement-breakpoint
++ALTER TABLE "platform_variant_versions" ADD COLUMN "thumbnail_snapshot" jsonb;--> statement-breakpoint
++CREATE UNIQUE INDEX "one_platform_format_per_content" ON "platform_variants" USING btree ("content_item_id","platform","content_format");
+diff --git a/drizzle/meta/0002_snapshot.json b/drizzle/meta/0002_snapshot.json
+new file mode 100644
+index 0000000..38b9b20
+--- /dev/null
++++ b/drizzle/meta/0002_snapshot.json
+@@ -0,0 +1,1431 @@
++{
++  "id": "c9cc059d-f418-4546-89ea-62e24f96cd50",
++  "prevId": "92086e96-0d9c-4fb3-92cc-34e32eca1621",
++  "version": "7",
++  "dialect": "postgresql",
++  "tables": {
++    "public.accounts": {
++      "name": "accounts",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "account_id": {
++          "name": "account_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "provider_id": {
++          "name": "provider_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "access_token": {
++          "name": "access_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "refresh_token": {
++          "name": "refresh_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "id_token": {
++          "name": "id_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "access_token_expires_at": {
++          "name": "access_token_expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "refresh_token_expires_at": {
++          "name": "refresh_token_expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "scope": {
++          "name": "scope",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "password": {
++          "name": "password",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "accounts_user_id_users_id_fk": {
++          "name": "accounts_user_id_users_id_fk",
++          "tableFrom": "accounts",
++          "tableTo": "users",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.audit_events": {
++      "name": "audit_events",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "actor_id": {
++          "name": "actor_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "action": {
++          "name": "action",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "entity_type": {
++          "name": "entity_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "entity_id": {
++          "name": "entity_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "metadata": {
++          "name": "metadata",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'{}'::jsonb"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "audit_events_actor_id_users_id_fk": {
++          "name": "audit_events_actor_id_users_id_fk",
++          "tableFrom": "audit_events",
++          "tableTo": "users",
++          "columnsFrom": [
++            "actor_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.comments": {
++      "name": "comments",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "platform_variant_id": {
++          "name": "platform_variant_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "version_id": {
++          "name": "version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "author_id": {
++          "name": "author_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "body": {
++          "name": "body",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "comments_platform_variant_id_platform_variants_id_fk": {
++          "name": "comments_platform_variant_id_platform_variants_id_fk",
++          "tableFrom": "comments",
++          "tableTo": "platform_variants",
++          "columnsFrom": [
++            "platform_variant_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "comments_version_id_platform_variant_versions_id_fk": {
++          "name": "comments_version_id_platform_variant_versions_id_fk",
++          "tableFrom": "comments",
++          "tableTo": "platform_variant_versions",
++          "columnsFrom": [
++            "version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "comments_author_id_users_id_fk": {
++          "name": "comments_author_id_users_id_fk",
++          "tableFrom": "comments",
++          "tableTo": "users",
++          "columnsFrom": [
++            "author_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.content_items": {
++      "name": "content_items",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "internal_reference": {
++          "name": "internal_reference",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "content_date": {
++          "name": "content_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "campaign": {
++          "name": "campaign",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "concept_summary": {
++          "name": "concept_summary",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "archived_at": {
++          "name": "archived_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "content_items_created_by_users_id_fk": {
++          "name": "content_items_created_by_users_id_fk",
++          "tableFrom": "content_items",
++          "tableTo": "users",
++          "columnsFrom": [
++            "created_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "content_items_internal_reference_unique": {
++          "name": "content_items_internal_reference_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "internal_reference"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.media_assets": {
++      "name": "media_assets",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "cloudinary_public_id": {
++          "name": "cloudinary_public_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "resource_type": {
++          "name": "resource_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'image'"
++        },
++        "mime_type": {
++          "name": "mime_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "original_filename": {
++          "name": "original_filename",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "width": {
++          "name": "width",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "height": {
++          "name": "height",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "duration_ms": {
++          "name": "duration_ms",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "bytes": {
++          "name": "bytes",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "alt_text": {
++          "name": "alt_text",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "storage": {
++          "name": "storage",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'cloudinary'"
++        },
++        "storage_version": {
++          "name": "storage_version",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "media_assets_created_by_users_id_fk": {
++          "name": "media_assets_created_by_users_id_fk",
++          "tableFrom": "media_assets",
++          "tableTo": "users",
++          "columnsFrom": [
++            "created_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "media_assets_cloudinary_public_id_unique": {
++          "name": "media_assets_cloudinary_public_id_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "cloudinary_public_id"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.platform_variants": {
++      "name": "platform_variants",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "content_item_id": {
++          "name": "content_item_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "platform": {
++          "name": "platform",
++          "type": "platform",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "content_format": {
++          "name": "content_format",
++          "type": "content_format",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'IMAGE_POST'"
++        },
++        "planned_publish_at": {
++          "name": "planned_publish_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "review_status": {
++          "name": "review_status",
++          "type": "review_status",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'DRAFT'"
++        },
++        "publishing_status": {
++          "name": "publishing_status",
++          "type": "publishing_status",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'UNSCHEDULED'"
++        },
++        "current_version_id": {
++          "name": "current_version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "one_platform_format_per_content": {
++          "name": "one_platform_format_per_content",
++          "columns": [
++            {
++              "expression": "content_item_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "platform",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "content_format",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "platform_variants_content_item_id_content_items_id_fk": {
++          "name": "platform_variants_content_item_id_content_items_id_fk",
++          "tableFrom": "platform_variants",
++          "tableTo": "content_items",
++          "columnsFrom": [
++            "content_item_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.publishing_records": {
++      "name": "publishing_records",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "platform_variant_id": {
++          "name": "platform_variant_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "version_id": {
++          "name": "version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "status": {
++          "name": "status",
++          "type": "publishing_status",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "scheduled_at": {
++          "name": "scheduled_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "published_at": {
++          "name": "published_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "published_url": {
++          "name": "published_url",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "external_post_id": {
++          "name": "external_post_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "publishing_records_platform_variant_id_platform_variants_id_fk": {
++          "name": "publishing_records_platform_variant_id_platform_variants_id_fk",
++          "tableFrom": "publishing_records",
++          "tableTo": "platform_variants",
++          "columnsFrom": [
++            "platform_variant_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "publishing_records_version_id_platform_variant_versions_id_fk": {
++          "name": "publishing_records_version_id_platform_variant_versions_id_fk",
++          "tableFrom": "publishing_records",
++          "tableTo": "platform_variant_versions",
++          "columnsFrom": [
++            "version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "publishing_records_created_by_users_id_fk": {
++          "name": "publishing_records_created_by_users_id_fk",
++          "tableFrom": "publishing_records",
++          "tableTo": "users",
++          "columnsFrom": [
++            "created_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.rate_limits": {
++      "name": "rate_limits",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "key": {
++          "name": "key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "count": {
++          "name": "count",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "last_request": {
++          "name": "last_request",
++          "type": "bigint",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "rate_limits_key_unique": {
++          "name": "rate_limits_key_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "key"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.review_decisions": {
++      "name": "review_decisions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "platform_variant_id": {
++          "name": "platform_variant_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "version_id": {
++          "name": "version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "reviewer_id": {
++          "name": "reviewer_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "decision": {
++          "name": "decision",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "reason": {
++          "name": "reason",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "one_final_decision_per_version": {
++          "name": "one_final_decision_per_version",
++          "columns": [
++            {
++              "expression": "version_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "review_decisions_platform_variant_id_platform_variants_id_fk": {
++          "name": "review_decisions_platform_variant_id_platform_variants_id_fk",
++          "tableFrom": "review_decisions",
++          "tableTo": "platform_variants",
++          "columnsFrom": [
++            "platform_variant_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "review_decisions_version_id_platform_variant_versions_id_fk": {
++          "name": "review_decisions_version_id_platform_variant_versions_id_fk",
++          "tableFrom": "review_decisions",
++          "tableTo": "platform_variant_versions",
++          "columnsFrom": [
++            "version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "review_decisions_reviewer_id_users_id_fk": {
++          "name": "review_decisions_reviewer_id_users_id_fk",
++          "tableFrom": "review_decisions",
++          "tableTo": "users",
++          "columnsFrom": [
++            "reviewer_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.sessions": {
++      "name": "sessions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "token": {
++          "name": "token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "ip_address": {
++          "name": "ip_address",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "user_agent": {
++          "name": "user_agent",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "sessions_user_id_users_id_fk": {
++          "name": "sessions_user_id_users_id_fk",
++          "tableFrom": "sessions",
++          "tableTo": "users",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "sessions_token_unique": {
++          "name": "sessions_token_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "token"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.users": {
++      "name": "users",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "email_verified": {
++          "name": "email_verified",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "image": {
++          "name": "image",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "role": {
++          "name": "role",
++          "type": "role",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'REVIEWER'"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "users_email_unique": {
++          "name": "users_email_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "email"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.platform_variant_media": {
++      "name": "platform_variant_media",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "platform_variant_id": {
++          "name": "platform_variant_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "version_id": {
++          "name": "version_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "media_asset_id": {
++          "name": "media_asset_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {
++        "version_media_order": {
++          "name": "version_media_order",
++          "columns": [
++            {
++              "expression": "version_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "sort_order",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "platform_variant_media_platform_variant_id_platform_variants_id_fk": {
++          "name": "platform_variant_media_platform_variant_id_platform_variants_id_fk",
++          "tableFrom": "platform_variant_media",
++          "tableTo": "platform_variants",
++          "columnsFrom": [
++            "platform_variant_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "platform_variant_media_version_id_platform_variant_versions_id_fk": {
++          "name": "platform_variant_media_version_id_platform_variant_versions_id_fk",
++          "tableFrom": "platform_variant_media",
++          "tableTo": "platform_variant_versions",
++          "columnsFrom": [
++            "version_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "platform_variant_media_media_asset_id_media_assets_id_fk": {
++          "name": "platform_variant_media_media_asset_id_media_assets_id_fk",
++          "tableFrom": "platform_variant_media",
++          "tableTo": "media_assets",
++          "columnsFrom": [
++            "media_asset_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.verifications": {
++      "name": "verifications",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "identifier": {
++          "name": "identifier",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "value": {
++          "name": "value",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.platform_variant_versions": {
++      "name": "platform_variant_versions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "platform_variant_id": {
++          "name": "platform_variant_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "version_number": {
++          "name": "version_number",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "caption_snapshot": {
++          "name": "caption_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "headline_snapshot": {
++          "name": "headline_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "script_snapshot": {
++          "name": "script_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "chapters_snapshot": {
++          "name": "chapters_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "tags_snapshot": {
++          "name": "tags_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "''"
++        },
++        "cta_text_snapshot": {
++          "name": "cta_text_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "cta_url_snapshot": {
++          "name": "cta_url_snapshot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "media_snapshot": {
++          "name": "media_snapshot",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "video_snapshot": {
++          "name": "video_snapshot",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "thumbnail_snapshot": {
++          "name": "thumbnail_snapshot",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "unique_variant_version": {
++          "name": "unique_variant_version",
++          "columns": [
++            {
++              "expression": "platform_variant_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "version_number",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "platform_variant_versions_platform_variant_id_platform_variants_id_fk": {
++          "name": "platform_variant_versions_platform_variant_id_platform_variants_id_fk",
++          "tableFrom": "platform_variant_versions",
++          "tableTo": "platform_variants",
++          "columnsFrom": [
++            "platform_variant_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        },
++        "platform_variant_versions_created_by_users_id_fk": {
++          "name": "platform_variant_versions_created_by_users_id_fk",
++          "tableFrom": "platform_variant_versions",
++          "tableTo": "users",
++          "columnsFrom": [
++            "created_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "no action",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    }
++  },
++  "enums": {
++    "public.content_format": {
++      "name": "content_format",
++      "schema": "public",
++      "values": [
++        "IMAGE_POST",
++        "CAROUSEL",
++        "SHORT_VIDEO",
++        "LONG_VIDEO"
++      ]
++    },
++    "public.platform": {
++      "name": "platform",
++      "schema": "public",
++      "values": [
++        "INSTAGRAM",
++        "FACEBOOK",
++        "LINKEDIN",
++        "YOUTUBE",
++        "TIKTOK"
++      ]
++    },
++    "public.publishing_status": {
++      "name": "publishing_status",
++      "schema": "public",
++      "values": [
++        "UNSCHEDULED",
++        "READY_TO_SCHEDULE",
++        "SCHEDULED",
++        "PUBLISHED"
++      ]
++    },
++    "public.review_status": {
++      "name": "review_status",
++      "schema": "public",
++      "values": [
++        "DRAFT",
++        "IN_PRODUCTION",
++        "READY_FOR_REVIEW",
++        "CHANGES_REQUESTED",
++        "APPROVED",
++        "REJECTED"
++      ]
++    },
++    "public.role": {
++      "name": "role",
++      "schema": "public",
++      "values": [
++        "ADMIN",
++        "PRODUCER",
++        "REVIEWER"
++      ]
++    }
++  },
++  "schemas": {},
++  "sequences": {},
++  "roles": {},
++  "policies": {},
++  "views": {},
++  "_meta": {
++    "columns": {},
++    "schemas": {},
++    "tables": {}
++  }
++}
+\ No newline at end of file
+diff --git a/drizzle/meta/_journal.json b/drizzle/meta/_journal.json
+index dde20a2..478eaa0 100644
+--- a/drizzle/meta/_journal.json
++++ b/drizzle/meta/_journal.json
+@@ -15,6 +15,13 @@
+       "when": 1788679485384,
+       "tag": "0001_immutable_history",
+       "breakpoints": true
++    },
++    {
++      "idx": 2,
++      "version": "7",
++      "when": 1788715299277,
++      "tag": "0002_peaceful_prima",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/scripts/seed.ts b/scripts/seed.ts
+index faed81d..f1d14ee 100644
+--- a/scripts/seed.ts
++++ b/scripts/seed.ts
+@@ -87,6 +87,7 @@ for (let n = 0; n < 5; n++) {
+     date.setUTCHours(16 + index, 0, 0, 0);
+     const v = await service.createVariant(a, item.id, {
+       platform,
++      contentFormat: media.length > 1 ? "CAROUSEL" : "IMAGE_POST",
+       plannedPublishAt: date.toISOString(),
+       caption: `${topics[n][0]}.\n\n${topics[n][1]}\n\n${platform === "INSTAGRAM" ? "Save this idea for your next home planning conversation. #HomeDesign #ThoughtfulPlanning" : platform === "FACEBOOK" ? "What matters most in a home that works for your family? Share your thoughts." : "A considered design brief helps teams make better decisions. What questions do you ask at the start of a project?"}\n\nSample content for prototype testing.`,
+       ctaText: "Explore the idea",
+diff --git a/src/app/api/media/[id]/route.ts b/src/app/api/media/[id]/route.ts
+index 4ea301d..1d3cc30 100644
+--- a/src/app/api/media/[id]/route.ts
++++ b/src/app/api/media/[id]/route.ts
+@@ -1,6 +1,7 @@
+ import { authenticate, apiError } from "@/lib/api-auth";
+ import { deliverMedia } from "@/lib/media";
+ export const dynamic = "force-dynamic";
++export const runtime = "nodejs";
+ export async function GET(
+   req: Request,
+   ctx: { params: Promise<{ id: string }> },
+diff --git a/src/app/api/v1/[...path]/route.ts b/src/app/api/v1/[...path]/route.ts
+index be6ca1d..34e0aae 100644
+--- a/src/app/api/v1/[...path]/route.ts
++++ b/src/app/api/v1/[...path]/route.ts
+@@ -1,7 +1,7 @@
+ import { authenticate, apiError } from "@/lib/api-auth";
+ import { AppError, coverage } from "@/lib/domain";
+ import * as service from "@/lib/service";
+-import { uploadMedia } from "@/lib/media";
++import { completeVideoUpload, signVideoUpload, uploadMedia } from "@/lib/media";
+ export const dynamic = "force-dynamic";
+ export const runtime = "nodejs";
+ type Context = { params: Promise<{ path: string[] }> };
+@@ -74,7 +74,15 @@ async function route(req: Request, ctx: Context) {
+       const text = await req.text();
+       if (text.length > 100000) throw new AppError(413, "Request too large.");
+       const input = JSON.parse(text || "{}");
+-      if (p[0] === "content" && p.length === 1 && method === "POST")
++      if (p[0] === "media" && p[1] === "sign-upload" && method === "POST")
++        data = signVideoUpload(actor, input);
++      else if (
++        p[0] === "media" &&
++        p[1] === "complete-video" &&
++        method === "POST"
++      )
++        data = await completeVideoUpload(actor, input);
++      else if (p[0] === "content" && p.length === 1 && method === "POST")
+         data = await service.createContent(actor, input);
+       else if (p[0] === "content" && p.length === 2 && method === "PATCH")
+         data = await service.updateContent(actor, p[1], input);
+diff --git a/src/app/globals.css b/src/app/globals.css
+index bf133e1..2919944 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -510,6 +510,30 @@ blockquote {
+ .platform-linkedin svg {
+   color: #286b8d;
+ }
++.platform-youtube svg {
++  color: #d62d2d;
++}
++.platform-tiktok svg {
++  color: #162d3b;
++}
++.format-badge {
++  display: inline-flex;
++  align-items: center;
++  padding: 3px 7px;
++  border-radius: 5px;
++  background: #edf2f5;
++  color: #526477;
++  font-size: 0.72rem;
++  font-weight: 600;
++}
++.video-placeholder {
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 9px;
++  color: #526477;
++  font-size: 0.8rem;
++}
+ .card-content h3 {
+   margin-bottom: 9px;
+   font-size: 1rem;
+@@ -778,6 +802,31 @@ blockquote {
+   max-height: 600px;
+   object-fit: contain;
+ }
++.video-preview {
++  display: grid;
++  place-items: center;
++  background: #0c1115;
++}
++.video-preview video {
++  display: block;
++  width: 100%;
++  max-height: 650px;
++  background: #000;
++}
++.portrait-video video {
++  width: min(100%, 390px);
++  aspect-ratio: 9 / 16;
++  object-fit: contain;
++}
++.landscape-video video {
++  aspect-ratio: 16 / 9;
++  object-fit: contain;
++}
++.video-headline {
++  margin: 17px 17px 8px;
++  font-size: 1rem;
++  line-height: 1.35;
++}
+ .no-media {
+   height: 300px;
+   display: grid;
+@@ -1013,6 +1062,22 @@ blockquote {
+   flex-direction: column;
+   gap: 18px;
+ }
++.script-panel h3 {
++  margin: 8px 0 13px;
++}
++.script-panel pre {
++  margin: 0 0 24px;
++  padding: 16px;
++  border: 1px solid var(--border);
++  border-radius: 7px;
++  background: #f7f9fa;
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++  font: inherit;
++  font-size: 0.86rem;
++  line-height: 1.65;
++  color: #2d3d4b;
++}
+ .history-event {
+   padding-bottom: 18px;
+   border-bottom: 1px solid var(--border);
+@@ -1037,6 +1102,89 @@ blockquote {
+   border-top: 1px solid var(--border);
+   padding-top: 20px;
+ }
++.editor-video {
++  border-top: 1px solid var(--border);
++  padding-top: 20px;
++}
++.editor-section-heading {
++  display: flex;
++  align-items: flex-start;
++  justify-content: space-between;
++  gap: 18px;
++  margin-bottom: 16px;
++}
++.editor-section-heading h3,
++.editor-section-heading p {
++  margin: 0;
++}
++.editor-section-heading p {
++  margin-top: 5px;
++  font-size: 0.84rem;
++}
++.editor-section-heading > svg {
++  color: #32697c;
++  flex: 0 0 auto;
++}
++.video-asset-card,
++.thumbnail-asset-card {
++  display: grid;
++  grid-template-columns: minmax(220px, 1fr) 1fr;
++  gap: 18px;
++  align-items: center;
++  margin-bottom: 18px;
++  padding: 13px;
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  background: #f8fafb;
++}
++.video-asset-card video {
++  width: 100%;
++  max-height: 280px;
++  border-radius: 6px;
++  background: #101820;
++}
++.video-asset-card strong,
++.video-asset-card span,
++.thumbnail-asset-card strong {
++  display: block;
++  overflow-wrap: anywhere;
++}
++.video-asset-card span {
++  margin: 7px 0 13px;
++  color: #677786;
++  font-size: 0.8rem;
++}
++.thumbnail-asset-card img {
++  width: 100%;
++  max-height: 180px;
++  object-fit: contain;
++  border-radius: 6px;
++  background: #dfe7ed;
++}
++.format-summary {
++  display: flex;
++  flex-direction: column;
++  justify-content: center;
++  min-height: 68px;
++  padding: 10px 12px;
++  border: 1px solid var(--border);
++  border-radius: 7px;
++  background: #f7f9fa;
++}
++.format-summary span {
++  margin-top: 4px;
++  color: #71808d;
++  font-size: 0.75rem;
++}
++.editor-video progress {
++  width: 100%;
++  height: 8px;
++  margin: 3px 0 8px;
++  accent-color: var(--primary);
++}
++.compact-media {
++  margin-top: 4px;
++}
+ .editor-media > p {
+   font-size: 0.86rem;
+ }
+@@ -1439,6 +1587,10 @@ blockquote {
+   .media-edit-grid {
+     grid-template-columns: 1fr 1fr;
+   }
++  .video-asset-card,
++  .thumbnail-asset-card {
++    grid-template-columns: 1fr;
++  }
+   .dialog-content {
+     padding: 24px;
+     width: calc(100vw - 20px);
+diff --git a/src/components/hub.tsx b/src/components/hub.tsx
+index 804cea4..597069c 100644
+--- a/src/components/hub.tsx
++++ b/src/components/hub.tsx
+@@ -18,7 +18,10 @@ import {
+   Camera,
+   MessageSquare,
+   BriefcaseBusiness,
++  Music2,
++  Video,
+ } from "lucide-react";
++import { platformValues } from "@/lib/platform-config";
+ import { Button } from "./ui/button";
+ import {
+   Dialog,
+@@ -55,7 +58,11 @@ export function Platform({ value }: { value: string }) {
+       ? Camera
+       : value === "FACEBOOK"
+         ? MessageSquare
+-        : BriefcaseBusiness;
++        : value === "LINKEDIN"
++          ? BriefcaseBusiness
++          : value === "YOUTUBE"
++            ? Video
++            : Music2;
+   return (
+     <span className={`platform platform-${value.toLowerCase()}`}>
+       <Icon size={15} />
+@@ -113,7 +120,7 @@ export function Hub({
+       (platform === "ALL" || v.platform === platform) &&
+       (!date || v.plannedPublishAt.slice(0, 10) === date) &&
+       (!query ||
+-        `${item.title} ${v.version.caption}`
++        `${item.title} ${v.version.headline || ""} ${v.version.caption}`
+           .toLowerCase()
+           .includes(query.toLowerCase())),
+   );
+@@ -361,7 +368,7 @@ export function Hub({
+                 onChange={(e) => setPlatform(e.target.value)}
+               >
+                 <option value="ALL">All platforms</option>
+-                {["INSTAGRAM", "FACEBOOK", "LINKEDIN"].map((p) => (
++                {platformValues.map((p) => (
+                   <option key={p}>{p}</option>
+                 ))}
+               </select>
+@@ -452,6 +459,9 @@ export function Hub({
+                             onClick={() => open(item, v)}
+                           >
+                             <Platform value={v.platform} />
++                            <span className="format-badge">
++                              {label(v.contentFormat)}
++                            </span>
+                             <Status value={v.reviewStatus} />
+                           </Button>
+                         ))}
+@@ -463,7 +473,7 @@ export function Hub({
+                         onClick={() => setEditing({ item })}
+                       >
+                         <Plus size={16} />
+-                        Add platform
++                        Add adaptation
+                       </Button>
+                       <Button
+                         variant="outline"
+@@ -505,19 +515,24 @@ export function Hub({
+                     onClick={() => open(item, v)}
+                   >
+                     <div className="card-media">
+-                      {v.version.media[0] ? (
++                      {v.version.thumbnail || v.version.media[0] ? (
+                         <img
+-                          src={`/api/media/${v.version.media[0].id}?thumb=1`}
+-                          alt={v.version.media[0].altText}
++                          src={`/api/media/${(v.version.thumbnail || v.version.media[0]).id}?thumb=1`}
++                          alt={
++                            (v.version.thumbnail || v.version.media[0]).altText
++                          }
+                           loading="lazy"
+                         />
++                      ) : v.version.video ? (
++                        <span className="video-placeholder">
++                          <Video size={34} />
++                          Video ready
++                        </span>
+                       ) : (
+                         <span>No media yet</span>
+                       )}
+                       <span className="media-count">
+-                        {v.version.media.length > 1
+-                          ? `${v.version.media.length} slides`
+-                          : "Single image"}
++                        {label(v.contentFormat)}
+                       </span>
+                     </div>
+                     <div className="card-content">
+diff --git a/src/components/producer.tsx b/src/components/producer.tsx
+index 52a4e3f..65ad160 100644
+--- a/src/components/producer.tsx
++++ b/src/components/producer.tsx
+@@ -1,8 +1,41 @@
+ "use client";
+ import { useState } from "react";
+-import { ArrowLeft, ArrowRight, Trash2, Upload } from "lucide-react";
++import {
++  ArrowLeft,
++  ArrowRight,
++  FileVideo2,
++  ImagePlus,
++  Trash2,
++  Upload,
++} from "lucide-react";
++import { formatsByPlatform, platformValues } from "@/lib/platform-config";
++import { uploadVideo } from "@/lib/client-video-upload";
+ import { Button } from "./ui/button";
+-import { api, type Item, type Variant } from "./types";
++import {
++  api,
++  type ContentFormat,
++  type Item,
++  type MediaAsset,
++  type Platform,
++  type Variant,
++} from "./types";
++
++function orientation(media: MediaAsset) {
++  if (!media.width || !media.height)
++    return "Orientation detected in production";
++  const ratio = media.width / media.height;
++  if (ratio > 1.15) return `${media.width}×${media.height} · Landscape`;
++  if (ratio < 0.87) return `${media.width}×${media.height} · Portrait`;
++  return `${media.width}×${media.height} · Square`;
++}
++
++function duration(ms: number) {
++  if (!ms) return "";
++  const seconds = Math.round(ms / 1000);
++  const minutes = Math.floor(seconds / 60);
++  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
++}
++
+ export function Editor({
+   item,
+   variant,
+@@ -12,43 +45,95 @@ export function Editor({
+   variant?: Variant;
+   onDone: () => Promise<void>;
+ }) {
+-  const [media, setMedia] = useState(variant?.version.media || []),
++  const availableFormats = (platform: Platform) =>
++    formatsByPlatform[platform].filter(
++      (format) =>
++        !item.variants.some(
++          (existing) =>
++            existing.platform === platform && existing.contentFormat === format,
++        ),
++    );
++  const firstPlatform =
++    platformValues.find((candidate) => availableFormats(candidate).length) ||
++    "INSTAGRAM";
++  const [platform, setPlatform] = useState<Platform>(
++      variant?.platform || firstPlatform,
++    ),
++    [contentFormat, setContentFormat] = useState<ContentFormat>(
++      variant?.contentFormat ||
++        availableFormats(firstPlatform)[0] ||
++        "IMAGE_POST",
++    ),
++    [media, setMedia] = useState(variant?.version.media || []),
++    [video, setVideo] = useState<MediaAsset | null>(
++      variant?.version.video || null,
++    ),
++    [thumbnail, setThumbnail] = useState<MediaAsset | null>(
++      variant?.version.thumbnail || null,
++    ),
+     [caption, setCaption] = useState(variant?.version.caption || ""),
+-    [alt, setAlt] = useState(""),
++    [imageAlt, setImageAlt] = useState(""),
++    [videoAlt, setVideoAlt] = useState(""),
++    [thumbnailAlt, setThumbnailAlt] = useState(""),
+     [error, setError] = useState(""),
+     [busy, setBusy] = useState(false),
+-    [uploading, setUploading] = useState(false);
++    [uploading, setUploading] = useState(false),
++    [uploadProgress, setUploadProgress] = useState(0);
++  const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(contentFormat);
++  const platformOptions = platformValues.filter(
++    (candidate) => availableFormats(candidate).length,
++  );
++  const formatOptions = variant
++    ? [variant.contentFormat]
++    : availableFormats(platform);
++
+   function move(index: number, delta: number) {
+     setMedia((old) => {
+       const next = [...old];
+       [next[index], next[index + delta]] = [next[index + delta], next[index]];
+-      return next.map((v, i) => ({ ...v, sortOrder: i }));
++      return next.map((value, position) => ({
++        ...value,
++        sortOrder: position,
++      }));
+     });
+   }
+-  const platforms = ["INSTAGRAM", "FACEBOOK", "LINKEDIN"].filter(
+-    (p) => !item.variants.some((v) => v.platform === p),
+-  );
+-  if (!variant && !platforms.length)
++
++  async function uploadImage(file: File, altText: string) {
++    const form = new FormData();
++    form.set("file", file);
++    form.set("altText", altText);
++    return api<MediaAsset>("media", "POST", form);
++  }
++
++  if (!variant && !platformOptions.length)
+     return (
+       <p>
+-        All three platforms have been added. Open one to create a revised
+-        version.
++        Every available platform and format has been added. Open an adaptation
++        to create a revised version.
+       </p>
+     );
++
+   return (
+     <form
+       className="stack"
+-      onSubmit={async (e) => {
+-        e.preventDefault();
++      onSubmit={async (event) => {
++        event.preventDefault();
+         setBusy(true);
+         setError("");
+-        const f = new FormData(e.currentTarget);
++        const form = new FormData(event.currentTarget);
+         try {
+           const snapshot = {
+             caption,
+-            ctaText: f.get("ctaText"),
+-            ctaUrl: f.get("ctaUrl"),
+-            mediaIds: media.map((m) => m.id),
++            headline: isVideo ? form.get("headline") : "",
++            script: isVideo ? form.get("script") : "",
++            chapters:
++              isVideo && platform === "YOUTUBE" ? form.get("chapters") : "",
++            tags: isVideo ? form.get("tags") : "",
++            ctaText: form.get("ctaText"),
++            ctaUrl: form.get("ctaUrl"),
++            mediaIds: isVideo ? [] : media.map((asset) => asset.id),
++            videoId: isVideo ? video?.id || null : null,
++            thumbnailId: isVideo ? thumbnail?.id || null : null,
+           };
+           if (variant) {
+             await api(`platform-variants/${variant.id}`, "PATCH", {
+@@ -56,38 +141,71 @@ export function Editor({
+               expectedVersionId: variant.currentVersionId,
+             });
+             const planned = new Date(
+-              String(f.get("plannedPublishAt")) + "Z",
++              String(form.get("plannedPublishAt")) + "Z",
+             ).toISOString();
+             if (planned !== new Date(variant.plannedPublishAt).toISOString())
+               await api(`platform-variants/${variant.id}/plan`, "POST", {
+                 plannedPublishAt: planned,
+               });
+-          } else
++          } else {
+             await api(`content/${item.id}/platform-variants`, "POST", {
+               ...snapshot,
+-              platform: f.get("platform"),
++              platform,
++              contentFormat,
+               plannedPublishAt: new Date(
+-                String(f.get("plannedPublishAt")) + "Z",
++                String(form.get("plannedPublishAt")) + "Z",
+               ).toISOString(),
+             });
++          }
+           await onDone();
+-        } catch (e) {
+-          setError((e as Error).message);
++        } catch (caught) {
++          setError((caught as Error).message);
+         } finally {
+           setBusy(false);
+         }
+       }}
+     >
+       <div className="form-grid">
+-        {!variant && (
+-          <label>
+-            Platform
+-            <select name="platform">
+-              {platforms.map((p) => (
+-                <option key={p}>{p}</option>
+-              ))}
+-            </select>
+-          </label>
++        {!variant ? (
++          <>
++            <label>
++              Platform
++              <select
++                name="platform"
++                value={platform}
++                onChange={(event) => {
++                  const next = event.target.value as Platform;
++                  setPlatform(next);
++                  setContentFormat(availableFormats(next)[0]);
++                }}
++              >
++                {platformOptions.map((value) => (
++                  <option key={value}>{value}</option>
++                ))}
++              </select>
++            </label>
++            <label>
++              Format
++              <select
++                name="contentFormat"
++                value={contentFormat}
++                onChange={(event) =>
++                  setContentFormat(event.target.value as ContentFormat)
++                }
++              >
++                {formatOptions.map((value) => (
++                  <option key={value} value={value}>
++                    {value.replaceAll("_", " ")}
++                  </option>
++                ))}
++              </select>
++            </label>
++          </>
++        ) : (
++          <div className="format-summary">
++            <strong>{platform.replaceAll("_", " ")}</strong>
++            <span>{contentFormat.replaceAll("_", " ")}</span>
++          </div>
+         )}
+         <label>
+           Planned date / time (UTC)
+@@ -103,17 +221,232 @@ export function Editor({
+           />
+         </label>
+       </div>
++
++      {isVideo && (
++        <>
++          <label>
++            {platform === "YOUTUBE" ? "Final YouTube title" : "Video title"}
++            <input
++              name="headline"
++              required={platform === "YOUTUBE"}
++              maxLength={200}
++              defaultValue={variant?.version.headline}
++            />
++          </label>
++          <div className="editor-video">
++            <div className="editor-section-heading">
++              <div>
++                <h3>Final video</h3>
++                <p>
++                  Upload the exact portrait or landscape cut the reviewer will
++                  approve.
++                </p>
++              </div>
++              <FileVideo2 size={24} />
++            </div>
++            {video && (
++              <div className="video-asset-card">
++                <video
++                  controls
++                  preload="metadata"
++                  aria-label={video.altText}
++                  src={`/api/media/${video.id}`}
++                  poster={
++                    thumbnail
++                      ? `/api/media/${thumbnail.id}?thumb=1`
++                      : `/api/media/${video.id}?thumb=1`
++                  }
++                />
++                <div>
++                  <strong>{video.altText}</strong>
++                  <span>
++                    {orientation(video)}
++                    {duration(video.durationMs)
++                      ? ` · ${duration(video.durationMs)}`
++                      : ""}
++                  </span>
++                  <Button
++                    type="button"
++                    variant="ghost"
++                    onClick={() => setVideo(null)}
++                  >
++                    <Trash2 size={15} /> Remove from this version
++                  </Button>
++                </div>
++              </div>
++            )}
++            <label>
++              Accessible video description
++              <input
++                value={videoAlt}
++                onChange={(event) => setVideoAlt(event.target.value)}
++                maxLength={500}
++                placeholder="Describe the final video for reviewers"
++              />
++            </label>
++            <label
++              className={`upload-control ${uploading || !videoAlt.trim() ? "disabled" : ""}`}
++            >
++              <Upload size={20} />
++              {uploading
++                ? `Uploading video · ${uploadProgress}%`
++                : video
++                  ? "Replace final video"
++                  : "Upload final video"}
++              <input
++                type="file"
++                accept="video/mp4,video/quicktime,video/webm"
++                disabled={uploading || !videoAlt.trim()}
++                onChange={async (event) => {
++                  const file = event.target.files?.[0];
++                  if (!file) return;
++                  setUploading(true);
++                  setUploadProgress(0);
++                  setError("");
++                  try {
++                    const asset = await uploadVideo(
++                      file,
++                      videoAlt,
++                      setUploadProgress,
++                    );
++                    setVideo({ ...asset, sortOrder: 0 });
++                    setVideoAlt("");
++                  } catch (caught) {
++                    setError((caught as Error).message);
++                  } finally {
++                    setUploading(false);
++                    event.target.value = "";
++                  }
++                }}
++              />
++            </label>
++            {uploading && (
++              <progress value={uploadProgress} max={100}>
++                {uploadProgress}%
++              </progress>
++            )}
++            <small>
++              MP4, MOV or WebM · Production review copy up to 1 GB · Large files
++              upload in resumable chunks
++            </small>
++          </div>
++
++          <div className="editor-media compact-media">
++            <div className="editor-section-heading">
++              <div>
++                <h3>Thumbnail or cover</h3>
++                <p>
++                  Required for a full YouTube episode and optional for
++                  short-form video.
++                </p>
++              </div>
++              <ImagePlus size={22} />
++            </div>
++            {thumbnail && (
++              <div className="thumbnail-asset-card">
++                <img
++                  src={`/api/media/${thumbnail.id}?thumb=1`}
++                  alt={thumbnail.altText}
++                />
++                <div>
++                  <strong>{thumbnail.altText}</strong>
++                  <Button
++                    type="button"
++                    variant="ghost"
++                    onClick={() => setThumbnail(null)}
++                  >
++                    <Trash2 size={15} /> Remove
++                  </Button>
++                </div>
++              </div>
++            )}
++            <label>
++              Thumbnail description
++              <input
++                value={thumbnailAlt}
++                onChange={(event) => setThumbnailAlt(event.target.value)}
++                maxLength={500}
++              />
++            </label>
++            <label
++              className={`upload-control ${uploading || !thumbnailAlt.trim() ? "disabled" : ""}`}
++            >
++              <ImagePlus size={20} />
++              {thumbnail ? "Replace thumbnail" : "Upload thumbnail"}
++              <input
++                type="file"
++                accept="image/jpeg,image/png,image/webp"
++                disabled={uploading || !thumbnailAlt.trim()}
++                onChange={async (event) => {
++                  const file = event.target.files?.[0];
++                  if (!file) return;
++                  setUploading(true);
++                  setError("");
++                  try {
++                    const asset = await uploadImage(file, thumbnailAlt);
++                    setThumbnail({ ...asset, sortOrder: 0 });
++                    setThumbnailAlt("");
++                  } catch (caught) {
++                    setError((caught as Error).message);
++                  } finally {
++                    setUploading(false);
++                    event.target.value = "";
++                  }
++                }}
++              />
++            </label>
++          </div>
++        </>
++      )}
++
+       <label>
+-        Full caption
++        {platform === "YOUTUBE" ? "Final description" : "Full caption"}
+         <textarea
+           rows={6}
+           required
+           value={caption}
+-          onChange={(e) => setCaption(e.target.value)}
++          onChange={(event) => setCaption(event.target.value)}
+           maxLength={10000}
+         />
+       </label>
+       <small>{caption.length} characters</small>
++
++      {isVideo && (
++        <>
++          <label>
++            Final script or transcript
++            <textarea
++              name="script"
++              rows={8}
++              maxLength={60000}
++              defaultValue={variant?.version.script}
++              placeholder="Paste the final script, outline or transcript used for this video."
++            />
++          </label>
++          {platform === "YOUTUBE" && (
++            <label>
++              Chapters and timestamps
++              <textarea
++                name="chapters"
++                rows={4}
++                maxLength={10000}
++                defaultValue={variant?.version.chapters}
++                placeholder={"00:00 Introduction\n02:15 First topic"}
++              />
++            </label>
++          )}
++          <label>
++            Tags, hashtags or publishing notes
++            <textarea
++              name="tags"
++              rows={3}
++              maxLength={2000}
++              defaultValue={variant?.version.tags}
++            />
++          </label>
++        </>
++      )}
++
+       <div className="form-grid">
+         <label>
+           CTA text
+@@ -133,107 +466,105 @@ export function Editor({
+           />
+         </label>
+       </div>
+-      <div className="editor-media">
+-        <h3>Images & carousel order</h3>
+-        <p>The order shown here is the order the reviewer approves.</p>
+-        <div className="media-edit-grid">
+-          {media.map((m, i) => (
+-            <div key={m.id}>
+-              <img src={`/api/media/${m.id}?thumb=1`} alt={m.altText} />
+-              <p>
+-                {i + 1}. {m.altText}
+-              </p>
+-              <div className="actions">
+-                <Button
+-                  type="button"
+-                  variant="outline"
+-                  size="icon"
+-                  aria-label={`Move slide ${i + 1} earlier`}
+-                  disabled={i === 0}
+-                  onClick={() => move(i, -1)}
+-                >
+-                  <ArrowLeft size={15} />
+-                </Button>
+-                <Button
+-                  type="button"
+-                  variant="outline"
+-                  size="icon"
+-                  aria-label={`Move slide ${i + 1} later`}
+-                  disabled={i === media.length - 1}
+-                  onClick={() => move(i, 1)}
+-                >
+-                  <ArrowRight size={15} />
+-                </Button>
+-                <Button
+-                  type="button"
+-                  variant="ghost"
+-                  size="icon"
+-                  aria-label={`Remove slide ${i + 1}`}
+-                  onClick={() =>
+-                    setMedia((old) => old.filter((x) => x.id !== m.id))
+-                  }
+-                >
+-                  <Trash2 size={15} />
+-                </Button>
++
++      {!isVideo && (
++        <div className="editor-media">
++          <h3>Images & carousel order</h3>
++          <p>The order shown here is the order the reviewer approves.</p>
++          <div className="media-edit-grid">
++            {media.map((asset, index) => (
++              <div key={asset.id}>
++                <img
++                  src={`/api/media/${asset.id}?thumb=1`}
++                  alt={asset.altText}
++                />
++                <p>
++                  {index + 1}. {asset.altText}
++                </p>
++                <div className="actions">
++                  <Button
++                    type="button"
++                    variant="outline"
++                    size="icon"
++                    aria-label={`Move slide ${index + 1} earlier`}
++                    disabled={index === 0}
++                    onClick={() => move(index, -1)}
++                  >
++                    <ArrowLeft size={15} />
++                  </Button>
++                  <Button
++                    type="button"
++                    variant="outline"
++                    size="icon"
++                    aria-label={`Move slide ${index + 1} later`}
++                    disabled={index === media.length - 1}
++                    onClick={() => move(index, 1)}
++                  >
++                    <ArrowRight size={15} />
++                  </Button>
++                  <Button
++                    type="button"
++                    variant="ghost"
++                    size="icon"
++                    aria-label={`Remove slide ${index + 1}`}
++                    onClick={() =>
++                      setMedia((old) =>
++                        old.filter((value) => value.id !== asset.id),
++                      )
++                    }
++                  >
++                    <Trash2 size={15} />
++                  </Button>
++                </div>
+               </div>
+-            </div>
+-          ))}
++            ))}
++          </div>
++          <label>
++            Alt text for the next image
++            <input
++              value={imageAlt}
++              onChange={(event) => setImageAlt(event.target.value)}
++              maxLength={500}
++            />
++          </label>
++          <label
++            className={`upload-control ${uploading || !imageAlt.trim() ? "disabled" : ""}`}
++          >
++            <Upload size={20} />
++            {uploading ? "Uploading…" : "Upload image"}
++            <input
++              type="file"
++              accept="image/jpeg,image/png,image/webp"
++              disabled={uploading || !imageAlt.trim() || media.length >= 20}
++              onChange={async (event) => {
++                const file = event.target.files?.[0];
++                if (!file) return;
++                setUploading(true);
++                setError("");
++                try {
++                  const asset = await uploadImage(file, imageAlt);
++                  setMedia((old) => [
++                    ...old,
++                    { ...asset, sortOrder: old.length },
++                  ]);
++                  setImageAlt("");
++                } catch (caught) {
++                  setError((caught as Error).message);
++                } finally {
++                  setUploading(false);
++                  event.target.value = "";
++                }
++              }}
++            />
++          </label>
++          <small>
++            {imageAlt.trim()
++              ? "JPEG, PNG or WebP · Up to 3 MB each"
++              : "Enter alt text above to enable image upload"}
++          </small>
+         </div>
+-        <label>
+-          Alt text for the next image
+-          <input
+-            value={alt}
+-            onChange={(e) => setAlt(e.target.value)}
+-            maxLength={500}
+-          />
+-        </label>
+-        <label
+-          className={`upload-control ${uploading || !alt.trim() ? "disabled" : ""}`}
+-        >
+-          <Upload size={20} />
+-          {uploading ? "Uploading…" : "Upload image"}
+-          <input
+-            type="file"
+-            accept="image/jpeg,image/png,image/webp"
+-            disabled={uploading || !alt.trim() || media.length >= 20}
+-            onChange={async (e) => {
+-              const file = e.target.files?.[0];
+-              if (!file) return;
+-              setUploading(true);
+-              setError("");
+-              const f = new FormData();
+-              f.set("file", file);
+-              f.set("altText", alt);
+-              try {
+-                const asset = await api<{ id: string; altText: string }>(
+-                  "media",
+-                  "POST",
+-                  f,
+-                );
+-                setMedia((old) => [
+-                  ...old,
+-                  {
+-                    id: asset.id,
+-                    altText: asset.altText,
+-                    sortOrder: old.length,
+-                  },
+-                ]);
+-                setAlt("");
+-              } catch (err) {
+-                setError((err as Error).message);
+-              } finally {
+-                setUploading(false);
+-                e.target.value = "";
+-              }
+-            }}
+-          />
+-        </label>
+-        <small>
+-          {alt.trim()
+-            ? "JPEG, PNG or WebP · Up to 3 MB each"
+-            : "Enter alt text above to enable image upload"}
+-        </small>
+-      </div>
++      )}
++
+       {variant && (
+         <p className="notice">
+           A substantive change creates version{" "}
+diff --git a/src/components/review.tsx b/src/components/review.tsx
+index 6ed98ce..4171dd6 100644
+--- a/src/components/review.tsx
++++ b/src/components/review.tsx
+@@ -59,6 +59,7 @@ export function Review({
+     load().catch((e) => setError(e.message));
+     setVersionId(variant.currentVersionId);
+     setSlide(0);
++    setTab("Review");
+   }, [variant.id, variant.currentVersionId, variant.reviewStatus]);
+   const version =
+     history?.versions.find((v) => v.id === versionId) || variant.version;
+@@ -67,6 +68,13 @@ export function Review({
+     (d) => d.decision.versionId === version.id,
+   );
+   const media = version.media[slide];
++  const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(variant.contentFormat);
++  const accountName =
++    variant.platform === "INSTAGRAM"
++      ? "plirisco"
++      : variant.platform === "YOUTUBE"
++        ? "Build Better Homes"
++        : "PLIRIS Co";
+   async function action(path: string, data: unknown) {
+     setBusy(true);
+     setError("");
+@@ -89,7 +97,7 @@ export function Review({
+       <div className="preview-column">
+         <header className="preview-heading">
+           <Platform value={variant.platform} />
+-          <span>Platform preview · Approximate layout</span>
++          <span>{label(variant.contentFormat)} · Platform preview</span>
+         </header>
+         <div
+           className={`social-preview social-${variant.platform.toLowerCase()}`}
+@@ -97,9 +105,7 @@ export function Review({
+           <div className="social-account">
+             <div className="brand-avatar">P</div>
+             <div>
+-              <strong>
+-                {variant.platform === "INSTAGRAM" ? "plirisco" : "PLIRIS Co"}
+-              </strong>
++              <strong>{accountName}</strong>
+               <small>
+                 {variant.platform === "LINKEDIN"
+                   ? "Residential design · Sample content"
+@@ -108,16 +114,40 @@ export function Review({
+             </div>
+             <MoreHorizontal size={22} />
+           </div>
+-          {variant.platform !== "INSTAGRAM" && (
++          {!["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
+             <p className="caption pre-media">{version.caption}</p>
+           )}
+-          <div className="preview-media">
+-            {media ? (
++          <div
++            className={`preview-media ${
++              isVideo
++                ? `video-preview ${
++                    variant.contentFormat === "SHORT_VIDEO"
++                      ? "portrait-video"
++                      : "landscape-video"
++                  }`
++                : ""
++            }`}
++          >
++            {isVideo && version.video ? (
++              <video
++                controls
++                preload="metadata"
++                aria-label={version.video.altText}
++                src={`/api/media/${version.video.id}`}
++                poster={
++                  version.thumbnail
++                    ? `/api/media/${version.thumbnail.id}?thumb=1`
++                    : `/api/media/${version.video.id}?thumb=1`
++                }
++              />
++            ) : media ? (
+               <img src={`/api/media/${media.id}`} alt={media.altText} />
+             ) : (
+-              <div className="no-media">No image attached</div>
++              <div className="no-media">
++                No {isVideo ? "video" : "image"} attached
++              </div>
+             )}
+-            {media && (
++            {!isVideo && media && (
+               <button
+                 className="enlarge"
+                 aria-label="Enlarge image"
+@@ -126,7 +156,7 @@ export function Review({
+                 <Maximize2 size={18} />
+               </button>
+             )}
+-            {version.media.length > 1 && (
++            {!isVideo && version.media.length > 1 && (
+               <>
+                 <button
+                   className="slide-arrow previous"
+@@ -151,7 +181,7 @@ export function Review({
+             )}
+           </div>
+           <div className="preview-icons" aria-hidden="true">
+-            {variant.platform === "INSTAGRAM" ? (
++            {["INSTAGRAM", "TIKTOK"].includes(variant.platform) ? (
+               <>
+                 <Heart />
+                 <MessageCircle />
+@@ -168,9 +198,14 @@ export function Review({
+               </>
+             )}
+           </div>
+-          {variant.platform === "INSTAGRAM" && (
++          {isVideo && version.headline && (
++            <h3 className="video-headline">{version.headline}</h3>
++          )}
++          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
+             <p className="caption">
+-              <strong>plirisco </strong>
++              {variant.platform !== "YOUTUBE" && (
++                <strong>{accountName} </strong>
++              )}
+               {version.caption}
+             </p>
+           )}
+@@ -181,7 +216,7 @@ export function Review({
+             </div>
+           )}
+         </div>
+-        {version.media.length > 1 && (
++        {!isVideo && version.media.length > 1 && (
+           <div className="thumbnails" aria-label="Carousel slides">
+             {version.media.map((m, i) => (
+               <button
+@@ -219,7 +254,7 @@ export function Review({
+           </span>
+         </div>
+         <div className="detail-tabs" role="tablist" aria-label="Review details">
+-          {["Review", "History"].map((t) => (
++          {["Review", ...(isVideo ? ["Script"] : []), "History"].map((t) => (
+             <button
+               key={t}
+               role="tab"
+@@ -233,7 +268,29 @@ export function Review({
+             </button>
+           ))}
+         </div>
+-        {tab === "Review" ? (
++        {tab === "Script" ? (
++          <section className="script-panel">
++            <p className="eyebrow">FINAL PRODUCTION REFERENCE</p>
++            <h3>{version.headline || item.title}</h3>
++            {version.script ? (
++              <pre>{version.script}</pre>
++            ) : (
++              <p>No final script or transcript was attached to this version.</p>
++            )}
++            {version.chapters && (
++              <>
++                <h3>Chapters and timestamps</h3>
++                <pre>{version.chapters}</pre>
++              </>
++            )}
++            {version.tags && (
++              <>
++                <h3>Tags and publishing notes</h3>
++                <pre>{version.tags}</pre>
++              </>
++            )}
++          </section>
++        ) : tab === "Review" ? (
+           <>
+             <dl className="details">
+               <div>
+@@ -248,6 +305,23 @@ export function Review({
+                 <dt>Publishing</dt>
+                 <dd>{label(variant.publishingStatus)}</dd>
+               </div>
++              <div>
++                <dt>Format</dt>
++                <dd>{label(variant.contentFormat)}</dd>
++              </div>
++              {isVideo && version.video && (
++                <div>
++                  <dt>Video</dt>
++                  <dd>
++                    {version.video.width && version.video.height
++                      ? `${version.video.width}×${version.video.height}`
++                      : "Dimensions pending"}
++                    {version.video.durationMs
++                      ? ` · ${Math.round(version.video.durationMs / 1000)} seconds`
++                      : ""}
++                  </dd>
++                </div>
++              )}
+               {version.ctaText && (
+                 <div>
+                   <dt>Call to action</dt>
+diff --git a/src/components/types.ts b/src/components/types.ts
+index 58be646..ad08953 100644
+--- a/src/components/types.ts
++++ b/src/components/types.ts
+@@ -1,18 +1,38 @@
++import type { ContentFormatValue, PlatformValue } from "@/lib/platform-config";
++export type Platform = PlatformValue;
++export type ContentFormat = ContentFormatValue;
++export type MediaAsset = {
++  id: string;
++  altText: string;
++  sortOrder: number;
++  resourceType: "image" | "video";
++  mimeType: string;
++  width: number;
++  height: number;
++  durationMs: number;
++};
+ export type Version = {
+   id: string;
+   platformVariantId: string;
+   versionNumber: number;
+   caption: string;
++  headline: string;
++  script: string;
++  chapters: string;
++  tags: string;
+   ctaText: string;
+   ctaUrl: string;
+-  media: { id: string; altText: string; sortOrder: number }[];
++  media: MediaAsset[];
++  video: MediaAsset | null;
++  thumbnail: MediaAsset | null;
+   createdAt: string;
+   createdBy: string;
+ };
+ export type Variant = {
+   id: string;
+   contentItemId: string;
+-  platform: "INSTAGRAM" | "FACEBOOK" | "LINKEDIN";
++  platform: Platform;
++  contentFormat: ContentFormat;
+   plannedPublishAt: string;
+   reviewStatus: string;
+   publishingStatus: string;
+diff --git a/src/db/schema.ts b/src/db/schema.ts
+index 4d74177..33d727e 100644
+--- a/src/db/schema.ts
++++ b/src/db/schema.ts
+@@ -14,6 +14,14 @@ export const platforms = pgEnum("platform", [
+   "INSTAGRAM",
+   "FACEBOOK",
+   "LINKEDIN",
++  "YOUTUBE",
++  "TIKTOK",
++]);
++export const contentFormats = pgEnum("content_format", [
++  "IMAGE_POST",
++  "CAROUSEL",
++  "SHORT_VIDEO",
++  "LONG_VIDEO",
+ ]);
+ export const reviewStates = pgEnum("review_status", [
+   "DRAFT",
+@@ -102,6 +110,9 @@ export const platformVariants = pgTable(
+       .notNull()
+       .references(() => contentItems.id),
+     platform: platforms("platform").notNull(),
++    contentFormat: contentFormats("content_format")
++      .notNull()
++      .default("IMAGE_POST"),
+     plannedPublishAt: timestamp("planned_publish_at", {
+       withTimezone: true,
+     }).notNull(),
+@@ -114,7 +125,11 @@ export const platformVariants = pgTable(
+     updatedAt: updated(),
+   },
+   (t) => [
+-    uniqueIndex("one_platform_per_content").on(t.contentItemId, t.platform),
++    uniqueIndex("one_platform_format_per_content").on(
++      t.contentItemId,
++      t.platform,
++      t.contentFormat,
++    ),
+   ],
+ );
+ export const mediaAssets = pgTable("media_assets", {
+@@ -125,6 +140,7 @@ export const mediaAssets = pgTable("media_assets", {
+   originalFilename: text("original_filename").notNull(),
+   width: integer("width").notNull(),
+   height: integer("height").notNull(),
++  durationMs: integer("duration_ms").notNull().default(0),
+   bytes: integer("bytes").notNull(),
+   altText: text("alt_text").notNull(),
+   storage: text("storage").notNull().default("cloudinary"),
+@@ -134,7 +150,16 @@ export const mediaAssets = pgTable("media_assets", {
+     .references(() => user.id),
+   createdAt: created(),
+ });
+-export type MediaSnapshot = { id: string; altText: string; sortOrder: number };
++export type MediaSnapshot = {
++  id: string;
++  altText: string;
++  sortOrder: number;
++  resourceType: "image" | "video";
++  mimeType: string;
++  width: number;
++  height: number;
++  durationMs: number;
++};
+ export const versions = pgTable(
+   "platform_variant_versions",
+   {
+@@ -144,9 +169,15 @@ export const versions = pgTable(
+       .references(() => platformVariants.id),
+     versionNumber: integer("version_number").notNull(),
+     caption: text("caption_snapshot").notNull(),
++    headline: text("headline_snapshot").notNull().default(""),
++    script: text("script_snapshot").notNull().default(""),
++    chapters: text("chapters_snapshot").notNull().default(""),
++    tags: text("tags_snapshot").notNull().default(""),
+     ctaText: text("cta_text_snapshot").notNull(),
+     ctaUrl: text("cta_url_snapshot").notNull(),
+     media: jsonb("media_snapshot").$type<MediaSnapshot[]>().notNull(),
++    video: jsonb("video_snapshot").$type<MediaSnapshot | null>(),
++    thumbnail: jsonb("thumbnail_snapshot").$type<MediaSnapshot | null>(),
+     createdBy: text("created_by")
+       .notNull()
+       .references(() => user.id),
+diff --git a/src/lib/client-video-upload.ts b/src/lib/client-video-upload.ts
+new file mode 100644
+index 0000000..fb02393
+--- /dev/null
++++ b/src/lib/client-video-upload.ts
+@@ -0,0 +1,145 @@
++import { api, type MediaAsset } from "@/components/types";
++
++type UploadProgress = (percentage: number) => void;
++type LocalUpload = {
++  mode: "local";
++  maxBytes: number;
++  acceptedTypes: readonly string[];
++};
++type CloudinaryUpload = {
++  mode: "cloudinary";
++  uploadUrl: string;
++  apiKey: string;
++  signature: string;
++  timestamp: number;
++  publicId: string;
++  uploadType: string;
++  overwrite: string;
++  maxBytes: number;
++  acceptedTypes: readonly string[];
++};
++type CloudinaryResponse = {
++  public_id: string;
++  version: number;
++  signature: string;
++  bytes: number;
++  width: number;
++  height: number;
++  duration?: number;
++  error?: { message?: string };
++};
++
++function postChunk(
++  config: CloudinaryUpload,
++  file: File,
++  chunk: Blob,
++  start: number,
++  end: number,
++  uploadId: string,
++  onProgress: UploadProgress,
++) {
++  return new Promise<CloudinaryResponse>((resolve, reject) => {
++    const form = new FormData();
++    form.set("file", chunk, file.name);
++    form.set("api_key", config.apiKey);
++    form.set("signature", config.signature);
++    form.set("timestamp", String(config.timestamp));
++    form.set("public_id", config.publicId);
++    form.set("type", config.uploadType);
++    form.set("overwrite", config.overwrite);
++    const xhr = new XMLHttpRequest();
++    xhr.open("POST", config.uploadUrl);
++    if (file.size > chunk.size || start > 0) {
++      xhr.setRequestHeader("X-Unique-Upload-Id", uploadId);
++      xhr.setRequestHeader(
++        "Content-Range",
++        `bytes ${start}-${end - 1}/${file.size}`,
++      );
++    }
++    xhr.upload.onprogress = (event) => {
++      if (event.lengthComputable)
++        onProgress(
++          Math.min(99, Math.round(((start + event.loaded) / file.size) * 100)),
++        );
++    };
++    xhr.onerror = () => reject(new Error("The video upload was interrupted."));
++    xhr.onload = () => {
++      let response: CloudinaryResponse;
++      try {
++        response = JSON.parse(xhr.responseText) as CloudinaryResponse;
++      } catch {
++        reject(new Error("Cloudinary returned an unreadable response."));
++        return;
++      }
++      if (xhr.status < 200 || xhr.status >= 300) {
++        reject(
++          new Error(response.error?.message || "Cloudinary upload failed."),
++        );
++        return;
++      }
++      resolve(response);
++    };
++    xhr.send(form);
++  });
++}
++
++export async function uploadVideo(
++  file: File,
++  altText: string,
++  onProgress: UploadProgress,
++) {
++  const config = await api<LocalUpload | CloudinaryUpload>(
++    "media/sign-upload",
++    "POST",
++    { filename: file.name, mimeType: file.type, bytes: file.size },
++  );
++  if (!config.acceptedTypes.includes(file.type))
++    throw new Error("Use an MP4, MOV or WebM video.");
++  if (file.size > config.maxBytes)
++    throw new Error(
++      config.mode === "local"
++        ? "Local demo videos must be under 3 MB. Production uploads directly to Cloudinary."
++        : "Use a compressed review copy under 1 GB.",
++    );
++  if (config.mode === "local") {
++    const form = new FormData();
++    form.set("file", file);
++    form.set("altText", altText);
++    onProgress(25);
++    const asset = await api<MediaAsset>("media", "POST", form);
++    onProgress(100);
++    return asset;
++  }
++  const chunkSize = 20 * 1024 * 1024;
++  const uploadId = crypto.randomUUID();
++  let response: CloudinaryResponse | null = null;
++  for (let start = 0; start < file.size; start += chunkSize) {
++    const end = Math.min(file.size, start + chunkSize);
++    response = await postChunk(
++      config,
++      file,
++      file.slice(start, end),
++      start,
++      end,
++      uploadId,
++      onProgress,
++    );
++  }
++  if (!response?.public_id || !response.version || !response.signature)
++    throw new Error("Cloudinary did not confirm the completed video upload.");
++  onProgress(99);
++  const asset = await api<MediaAsset>("media/complete-video", "POST", {
++    publicId: response.public_id,
++    version: response.version,
++    responseSignature: response.signature,
++    mimeType: file.type,
++    originalFilename: file.name,
++    bytes: response.bytes || file.size,
++    width: response.width || 0,
++    height: response.height || 0,
++    duration: response.duration || 0,
++    altText,
++  });
++  onProgress(100);
++  return asset;
++}
+diff --git a/src/lib/media.ts b/src/lib/media.ts
+index 437ed48..2d31aec 100644
+--- a/src/lib/media.ts
++++ b/src/lib/media.ts
+@@ -1,10 +1,18 @@
+ import { v2 as cloudinary } from "cloudinary";
++import { timingSafeEqual } from "node:crypto";
+ import { mkdir, writeFile, readFile } from "node:fs/promises";
+ import path from "node:path";
+ import { eq } from "drizzle-orm";
+-import { getDb } from "@/db";
++import { z } from "zod";
++import { getDb, type Transaction } from "@/db";
+ import { mediaAssets, auditEvents } from "@/db/schema";
+ import { type Actor, AppError, requireProducer } from "./domain";
++
++const MAX_SERVER_UPLOAD_BYTES = 3_000_000;
++const MAX_VIDEO_BYTES = 1_000_000_000;
++const imageTypes = ["image/jpeg", "image/png", "image/webp"] as const;
++const videoTypes = ["video/mp4", "video/quicktime", "video/webm"] as const;
++
+ function cloud() {
+   if (
+     !process.env.CLOUDINARY_CLOUD_NAME ||
+@@ -20,47 +28,87 @@ function cloud() {
+   });
+   return cloudinary;
+ }
++
++function isLocalDemo() {
++  return (
++    process.env.LOCAL_DEMO === "1" &&
++    !process.env.DATABASE_URL &&
++    !process.env.VERCEL
++  );
++}
++
++function detectMime(bytes: Buffer) {
++  if (bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])))
++    return "image/jpeg";
++  if (
++    bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
++  )
++    return "image/png";
++  if (
++    bytes.toString("ascii", 0, 4) === "RIFF" &&
++    bytes.toString("ascii", 8, 12) === "WEBP"
++  )
++    return "image/webp";
++  if (bytes.toString("ascii", 4, 8) === "ftyp") return "video/mp4";
++  if (bytes.subarray(0, 4).equals(Buffer.from([26, 69, 223, 163])))
++    return "video/webm";
++  return null;
++}
++
++async function auditUpload(
++  tx: Transaction,
++  actor: Actor,
++  assetId: string,
++  resourceType: "image" | "video",
++) {
++  await tx.insert(auditEvents).values({
++    id: crypto.randomUUID(),
++    actorId: actor.id,
++    action: "MEDIA_UPLOADED",
++    entityType: "media",
++    entityId: assetId,
++    metadata: { integration: !!actor.integration, resourceType },
++  });
++}
++
+ export async function uploadMedia(actor: Actor, req: Request) {
+   requireProducer(actor);
+   const declared = Number(req.headers.get("content-length") || 0);
+   if (declared > 4_000_000)
+-    throw new AppError(413, "Image must be under 3 MB.");
++    throw new AppError(413, "Server uploads must be under 3 MB.");
+   const data = await req.formData();
+   const file = data.get("file");
+   const altText = String(data.get("altText") || "").trim();
+   if (!(file instanceof File) || !altText || altText.length > 500)
+-    throw new AppError(422, "An image and alt text are required.");
+-  if (
+-    file.size > 3_000_000 ||
+-    !["image/jpeg", "image/png", "image/webp"].includes(file.type)
+-  )
+-    throw new AppError(422, "Use a JPEG, PNG or WebP under 3 MB.");
++    throw new AppError(
++      422,
++      "A media file and accessible description are required.",
++    );
++  const supported = [...imageTypes, ...videoTypes] as readonly string[];
++  if (file.size > MAX_SERVER_UPLOAD_BYTES || !supported.includes(file.type))
++    throw new AppError(
++      422,
++      "Use a JPEG, PNG, WebP, MP4, MOV or WebM file under 3 MB for this upload.",
++    );
++  const resourceType = file.type.startsWith("video/") ? "video" : "image";
++  if (resourceType === "video" && !isLocalDemo())
++    throw new AppError(413, "Use the direct Cloudinary video uploader.");
+   const bytes = Buffer.from(await file.arrayBuffer());
+-  const detected = bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+-    ? "image/jpeg"
+-    : bytes
+-          .subarray(0, 8)
+-          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+-      ? "image/png"
+-      : bytes.toString("ascii", 0, 4) === "RIFF" &&
+-          bytes.toString("ascii", 8, 12) === "WEBP"
+-        ? "image/webp"
+-        : null;
+-  if (detected !== file.type)
+-    throw new AppError(422, "Image format does not match the file.");
++  const detected = detectMime(bytes);
++  const compatibleQuickTime =
++    file.type === "video/quicktime" && detected === "video/mp4";
++  if (detected !== file.type && !compatibleQuickTime)
++    throw new AppError(422, "Media format does not match the file.");
+   const assetId = crypto.randomUUID();
+   let metadata: {
+     cloudinaryPublicId: string | null;
+     width: number;
+     height: number;
++    durationMs: number;
+     storage: string;
+     storageVersion: string | null;
+   };
+-  if (
+-    process.env.LOCAL_DEMO === "1" &&
+-    !process.env.DATABASE_URL &&
+-    !process.env.VERCEL
+-  ) {
++  if (isLocalDemo()) {
+     const dir = path.resolve(".local/media");
+     await mkdir(dir, { recursive: true });
+     await writeFile(path.join(dir, assetId), bytes);
+@@ -68,6 +116,7 @@ export async function uploadMedia(actor: Actor, req: Request) {
+       cloudinaryPublicId: null,
+       width: 0,
+       height: 0,
++      durationMs: 0,
+       storage: "local",
+       storageVersion: null,
+     };
+@@ -86,6 +135,7 @@ export async function uploadMedia(actor: Actor, req: Request) {
+       cloudinaryPublicId: uploaded.public_id,
+       width: uploaded.width,
+       height: uploaded.height,
++      durationMs: 0,
+       storage: "cloudinary",
+       storageVersion: String(uploaded.version),
+     };
+@@ -96,6 +146,7 @@ export async function uploadMedia(actor: Actor, req: Request) {
+       .values({
+         id: assetId,
+         ...metadata,
++        resourceType,
+         mimeType: file.type,
+         originalFilename: file.name.slice(0, 250),
+         bytes: file.size,
+@@ -103,19 +154,115 @@ export async function uploadMedia(actor: Actor, req: Request) {
+         createdBy: actor.id,
+       })
+       .returning();
+-    await tx
+-      .insert(auditEvents)
++    await auditUpload(tx, actor, assetId, resourceType);
++    return asset;
++  });
++}
++
++const signUploadSchema = z
++  .object({
++    filename: z.string().trim().min(1).max(250),
++    mimeType: z.enum(videoTypes),
++    bytes: z.number().int().positive().max(MAX_VIDEO_BYTES),
++  })
++  .strict();
++
++export function signVideoUpload(actor: Actor, input: unknown) {
++  requireProducer(actor);
++  const data = signUploadSchema.parse(input);
++  if (isLocalDemo())
++    return {
++      mode: "local" as const,
++      maxBytes: MAX_SERVER_UPLOAD_BYTES,
++      acceptedTypes: videoTypes,
++    };
++  const c = cloud();
++  const timestamp = Math.floor(Date.now() / 1000);
++  const publicId = `pliris-social/${new Date().getUTCFullYear()}/${crypto.randomUUID()}`;
++  const params = {
++    overwrite: "false",
++    public_id: publicId,
++    timestamp,
++    type: "authenticated",
++  };
++  return {
++    mode: "cloudinary" as const,
++    uploadUrl: `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/video/upload`,
++    apiKey: process.env.CLOUDINARY_API_KEY!,
++    signature: c.utils.api_sign_request(
++      params,
++      process.env.CLOUDINARY_API_SECRET!,
++    ),
++    timestamp,
++    publicId,
++    uploadType: "authenticated",
++    overwrite: "false",
++    maxBytes: MAX_VIDEO_BYTES,
++    acceptedTypes: videoTypes,
++    filename: data.filename,
++  };
++}
++
++const completeUploadSchema = z
++  .object({
++    publicId: z.string().regex(/^pliris-social\/\d{4}\/[0-9a-f-]{36}$/),
++    version: z.number().int().positive(),
++    responseSignature: z.string().regex(/^[a-f0-9]{40}$/i),
++    mimeType: z.enum(videoTypes),
++    originalFilename: z.string().trim().min(1).max(250),
++    bytes: z.number().int().positive().max(MAX_VIDEO_BYTES),
++    width: z.number().int().nonnegative(),
++    height: z.number().int().nonnegative(),
++    duration: z
++      .number()
++      .nonnegative()
++      .max(24 * 60 * 60),
++    altText: z.string().trim().min(1).max(500),
++  })
++  .strict();
++
++export async function completeVideoUpload(actor: Actor, input: unknown) {
++  requireProducer(actor);
++  if (isLocalDemo())
++    throw new AppError(409, "Local demo videos use the server upload route.");
++  const data = completeUploadSchema.parse(input);
++  const c = cloud();
++  const expected = c.utils.api_sign_request(
++    { public_id: data.publicId, version: data.version },
++    process.env.CLOUDINARY_API_SECRET!,
++  );
++  const suppliedBytes = Buffer.from(data.responseSignature, "utf8");
++  const expectedBytes = Buffer.from(expected, "utf8");
++  if (
++    suppliedBytes.length !== expectedBytes.length ||
++    !timingSafeEqual(suppliedBytes, expectedBytes)
++  )
++    throw new AppError(422, "Cloudinary upload verification failed.");
++  const assetId = crypto.randomUUID();
++  return getDb().transaction(async (tx) => {
++    const [asset] = await tx
++      .insert(mediaAssets)
+       .values({
+-        id: crypto.randomUUID(),
+-        actorId: actor.id,
+-        action: "MEDIA_UPLOADED",
+-        entityType: "media",
+-        entityId: assetId,
+-        metadata: { integration: !!actor.integration },
+-      });
++        id: assetId,
++        cloudinaryPublicId: data.publicId,
++        resourceType: "video",
++        mimeType: data.mimeType,
++        originalFilename: data.originalFilename,
++        width: data.width,
++        height: data.height,
++        durationMs: Math.round(data.duration * 1000),
++        bytes: data.bytes,
++        altText: data.altText,
++        storage: "cloudinary",
++        storageVersion: String(data.version),
++        createdBy: actor.id,
++      })
++      .returning();
++    await auditUpload(tx, actor, assetId, "video");
+     return asset;
+   });
+ }
++
+ export async function deliverMedia(assetId: string, thumbnail = false) {
+   const [asset] = await getDb()
+     .select()
+@@ -128,12 +275,32 @@ export async function deliverMedia(assetId: string, thumbnail = false) {
+     "X-Content-Type-Options": "nosniff",
+   };
+   if (asset.storage === "local") {
+-    if (process.env.LOCAL_DEMO !== "1" || process.env.VERCEL)
+-      throw new AppError(404, "Local media unavailable.");
++    if (!isLocalDemo()) throw new AppError(404, "Local media unavailable.");
+     const bytes = await readFile(path.resolve(".local/media", asset.id));
+     return new Response(bytes, { headers });
+   }
+   const c = cloud();
++  if (asset.resourceType === "video") {
++    const url = c.url(asset.cloudinaryPublicId!, {
++      secure: true,
++      sign_url: true,
++      type: "authenticated",
++      resource_type: "video",
++      version: asset.storageVersion || undefined,
++      ...(thumbnail
++        ? {
++            format: "jpg",
++            transformation: [{ width: 720, crop: "limit", start_offset: "0" }],
++          }
++        : asset.mimeType === "video/mp4"
++          ? {}
++          : { format: "mp4" }),
++    });
++    return new Response(null, {
++      status: 307,
++      headers: { ...headers, Location: url },
++    });
++  }
+   const url = c.url(asset.cloudinaryPublicId!, {
+     secure: true,
+     sign_url: true,
+diff --git a/src/lib/platform-config.ts b/src/lib/platform-config.ts
+new file mode 100644
+index 0000000..62500f3
+--- /dev/null
++++ b/src/lib/platform-config.ts
+@@ -0,0 +1,28 @@
++export const platformValues = [
++  "INSTAGRAM",
++  "FACEBOOK",
++  "LINKEDIN",
++  "YOUTUBE",
++  "TIKTOK",
++] as const;
++export const contentFormatValues = [
++  "IMAGE_POST",
++  "CAROUSEL",
++  "SHORT_VIDEO",
++  "LONG_VIDEO",
++] as const;
++export type PlatformValue = (typeof platformValues)[number];
++export type ContentFormatValue = (typeof contentFormatValues)[number];
++export const formatsByPlatform: Record<PlatformValue, ContentFormatValue[]> = {
++  INSTAGRAM: ["IMAGE_POST", "CAROUSEL", "SHORT_VIDEO"],
++  FACEBOOK: ["IMAGE_POST", "CAROUSEL", "SHORT_VIDEO", "LONG_VIDEO"],
++  LINKEDIN: ["IMAGE_POST", "CAROUSEL", "LONG_VIDEO"],
++  YOUTUBE: ["SHORT_VIDEO", "LONG_VIDEO"],
++  TIKTOK: ["SHORT_VIDEO"],
++};
++export function isPlatformFormatAllowed(
++  platform: PlatformValue,
++  contentFormat: ContentFormatValue,
++) {
++  return formatsByPlatform[platform].includes(contentFormat);
++}
+diff --git a/src/lib/service.ts b/src/lib/service.ts
+index 37568bd..034869a 100644
+--- a/src/lib/service.ts
++++ b/src/lib/service.ts
+@@ -19,6 +19,7 @@ import {
+   dateSchema,
+   decisionSchema,
+ } from "./validation";
++import type { ContentFormatValue, PlatformValue } from "./platform-config";
+ const id = () => crypto.randomUUID();
+ async function audit(
+   tx: Transaction,
+@@ -27,16 +28,14 @@ async function audit(
+   entityId: string,
+   metadata: Record<string, unknown> = {},
+ ) {
+-  await tx
+-    .insert(s.auditEvents)
+-    .values({
+-      id: id(),
+-      actorId: actor.id,
+-      action,
+-      entityType: "platform_variant",
+-      entityId,
+-      metadata: { ...metadata, integration: !!actor.integration },
+-    });
++  await tx.insert(s.auditEvents).values({
++    id: id(),
++    actorId: actor.id,
++    action,
++    entityType: "platform_variant",
++    entityId,
++    metadata: { ...metadata, integration: !!actor.integration },
++  });
+ }
+ async function lock(tx: Transaction, variantId: string) {
+   const [v] = await tx
+@@ -52,18 +51,37 @@ async function lock(tx: Transaction, variantId: string) {
+   if (item.archivedAt) throw new AppError(409, "This content is archived.");
+   return v;
+ }
++async function snapshotAsset(
++  tx: Transaction,
++  mediaId: string,
++  expectedType: "image" | "video",
++  sortOrder: number,
++) {
++  const [m] = await tx
++    .select()
++    .from(s.mediaAssets)
++    .where(eq(s.mediaAssets.id, mediaId));
++  if (!m) throw new AppError(422, "Media asset does not exist.");
++  if (m.resourceType !== expectedType)
++    throw new AppError(422, `Expected a ${expectedType} asset.`);
++  return {
++    id: m.id,
++    altText: m.altText,
++    sortOrder,
++    resourceType: expectedType,
++    mimeType: m.mimeType,
++    width: m.width,
++    height: m.height,
++    durationMs: m.durationMs,
++  } as s.MediaSnapshot;
++}
+ async function snapshotMedia(tx: Transaction, mediaIds: string[]) {
+   if (new Set(mediaIds).size !== mediaIds.length)
+     throw new AppError(422, "Duplicate media.");
+   return Promise.all(
+-    mediaIds.map(async (mediaId, sortOrder) => {
+-      const [m] = await tx
+-        .select()
+-        .from(s.mediaAssets)
+-        .where(eq(s.mediaAssets.id, mediaId));
+-      if (!m) throw new AppError(422, "Media asset does not exist.");
+-      return { id: m.id, altText: m.altText, sortOrder };
+-    }),
++    mediaIds.map((mediaId, sortOrder) =>
++      snapshotAsset(tx, mediaId, "image", sortOrder),
++    ),
+   );
+ }
+ async function insertVersion(
+@@ -73,43 +91,99 @@ async function insertVersion(
+   versionNumber: number,
+   data: {
+     caption: string;
++    headline: string;
++    script: string;
++    chapters: string;
++    tags: string;
+     ctaText: string;
+     ctaUrl: string;
+     mediaIds: string[];
++    videoId: string | null;
++    thumbnailId: string | null;
+   },
+ ) {
+   const media = await snapshotMedia(tx, data.mediaIds);
++  const video = data.videoId
++    ? await snapshotAsset(tx, data.videoId, "video", media.length)
++    : null;
++  const thumbnail = data.thumbnailId
++    ? await snapshotAsset(
++        tx,
++        data.thumbnailId,
++        "image",
++        media.length + (video ? 1 : 0),
++      )
++    : null;
+   const versionId = id();
+-  await tx
+-    .insert(s.versions)
+-    .values({
+-      id: versionId,
+-      platformVariantId: variantId,
+-      versionNumber,
+-      caption: data.caption,
+-      ctaText: data.ctaText,
+-      ctaUrl: data.ctaUrl,
+-      media,
+-      createdBy: actor.id,
+-    });
+-  if (media.length)
+-    await tx
+-      .insert(s.variantMedia)
+-      .values(
+-        media.map((m) => ({
+-          id: id(),
+-          platformVariantId: variantId,
+-          versionId,
+-          mediaAssetId: m.id,
+-          sortOrder: m.sortOrder,
+-        })),
+-      );
++  await tx.insert(s.versions).values({
++    id: versionId,
++    platformVariantId: variantId,
++    versionNumber,
++    caption: data.caption,
++    headline: data.headline,
++    script: data.script,
++    chapters: data.chapters,
++    tags: data.tags,
++    ctaText: data.ctaText,
++    ctaUrl: data.ctaUrl,
++    media,
++    video,
++    thumbnail,
++    createdBy: actor.id,
++  });
++  const linkedMedia = [
++    ...media,
++    ...(video ? [video] : []),
++    ...(thumbnail ? [thumbnail] : []),
++  ];
++  if (linkedMedia.length)
++    await tx.insert(s.variantMedia).values(
++      linkedMedia.map((m) => ({
++        id: id(),
++        platformVariantId: variantId,
++        versionId,
++        mediaAssetId: m.id,
++        sortOrder: m.sortOrder,
++      })),
++    );
+   await audit(tx, actor, "VERSION_CREATED", variantId, {
+     versionId,
+     versionNumber,
+   });
+   return versionId;
+ }
++function assertPayloadShape(
++  platform: PlatformValue,
++  contentFormat: ContentFormatValue,
++  data: {
++    headline: string;
++    script: string;
++    chapters: string;
++    tags: string;
++    mediaIds: string[];
++    videoId: string | null;
++    thumbnailId: string | null;
++  },
++) {
++  const videoFormat = ["SHORT_VIDEO", "LONG_VIDEO"].includes(contentFormat);
++  if (videoFormat && data.mediaIds.length)
++    throw new AppError(
++      422,
++      "Video adaptations cannot include carousel images.",
++    );
++  if (
++    !videoFormat &&
++    (data.videoId ||
++      data.thumbnailId ||
++      data.headline ||
++      data.script ||
++      data.chapters ||
++      data.tags)
++  )
++    throw new AppError(422, "Image adaptations cannot include video fields.");
++  if (platform !== "YOUTUBE" && data.chapters)
++    throw new AppError(422, "Chapters are available only for YouTube.");
++}
+ export async function createContent(actor: Actor, input: unknown) {
+   requireProducer(actor);
+   const data = contentSchema.parse(input);
+@@ -157,7 +231,8 @@ export async function archiveContent(actor: Actor, contentId: string) {
+       .where(eq(s.contentItems.id, contentId))
+       .for("update");
+     if (!item) throw new AppError(404, "Content not found.");
+-    if (item.archivedAt) throw new AppError(409, "Content is already archived.");
++    if (item.archivedAt)
++      throw new AppError(409, "Content is already archived.");
+     const [archived] = await tx
+       .update(s.contentItems)
+       .set({ archivedAt: new Date(), updatedAt: new Date() })
+@@ -174,6 +249,7 @@ export async function createVariant(
+ ) {
+   requireProducer(actor);
+   const data = variantSchema.parse(input);
++  assertPayloadShape(data.platform, data.contentFormat, data);
+   return getDb().transaction(async (tx) => {
+     const [item] = await tx
+       .select()
+@@ -182,14 +258,13 @@ export async function createVariant(
+     if (!item || item.archivedAt)
+       throw new AppError(404, "Active content not found.");
+     const variantId = id();
+-    await tx
+-      .insert(s.platformVariants)
+-      .values({
+-        id: variantId,
+-        contentItemId: contentId,
+-        platform: data.platform,
+-        plannedPublishAt: new Date(data.plannedPublishAt),
+-      });
++    await tx.insert(s.platformVariants).values({
++      id: variantId,
++      contentItemId: contentId,
++      platform: data.platform,
++      contentFormat: data.contentFormat,
++      plannedPublishAt: new Date(data.plannedPublishAt),
++    });
+     const versionId = await insertVersion(tx, actor, variantId, 1, data);
+     const [variant] = await tx
+       .update(s.platformVariants)
+@@ -210,14 +285,21 @@ export async function editVariant(
+   return getDb().transaction(async (tx) => {
+     const v = await lock(tx, variantId);
+     requireVersion(v.currentVersionId, data.expectedVersionId);
++    assertPayloadShape(v.platform, v.contentFormat, data);
+     const [previous] = await tx
+       .select()
+       .from(s.versions)
+       .where(eq(s.versions.id, data.expectedVersionId));
+     if (
+       previous.caption === data.caption &&
++      previous.headline === data.headline &&
++      previous.script === data.script &&
++      previous.chapters === data.chapters &&
++      previous.tags === data.tags &&
+       previous.ctaText === data.ctaText &&
+       previous.ctaUrl === data.ctaUrl &&
++      (previous.video?.id || null) === data.videoId &&
++      (previous.thumbnail?.id || null) === data.thumbnailId &&
+       JSON.stringify(previous.media.map((m) => m.id)) ===
+         JSON.stringify(data.mediaIds)
+     )
+@@ -233,8 +315,18 @@ export async function editVariant(
+       v.reviewStatus === "DRAFT" || v.reviewStatus === "IN_PRODUCTION"
+         ? v.reviewStatus
+         : "READY_FOR_REVIEW";
+-    if (reviewStatus === "READY_FOR_REVIEW" && !data.mediaIds.length)
+-      throw new AppError(422, "Reviewable content needs at least one image.");
++    if (
++      reviewStatus === "READY_FOR_REVIEW" &&
++      ["IMAGE_POST", "CAROUSEL"].includes(v.contentFormat) &&
++      !data.mediaIds.length
++    )
++      throw new AppError(422, "Reviewable image content needs an image.");
++    if (
++      reviewStatus === "READY_FOR_REVIEW" &&
++      ["SHORT_VIDEO", "LONG_VIDEO"].includes(v.contentFormat) &&
++      !data.videoId
++    )
++      throw new AppError(422, "Reviewable video content needs a video.");
+     const [updated] = await tx
+       .update(s.platformVariants)
+       .set({
+@@ -271,11 +363,26 @@ export async function submitReview(
+       .select()
+       .from(s.versions)
+       .where(eq(s.versions.id, expected));
+-    if (!version.caption.trim() || !version.media.length)
+-      throw new AppError(
+-        422,
+-        "Add a caption and at least one image before review.",
+-      );
++    if (!version.caption.trim())
++      throw new AppError(422, "Add the final caption or description.");
++    if (
++      ["IMAGE_POST", "CAROUSEL"].includes(v.contentFormat) &&
++      !version.media.length
++    )
++      throw new AppError(422, "Add at least one image before review.");
++    if (
++      ["SHORT_VIDEO", "LONG_VIDEO"].includes(v.contentFormat) &&
++      !version.video
++    )
++      throw new AppError(422, "Upload the final video before review.");
++    if (v.platform === "YOUTUBE" && !version.headline.trim())
++      throw new AppError(422, "Add the final YouTube title before review.");
++    if (
++      v.platform === "YOUTUBE" &&
++      v.contentFormat === "LONG_VIDEO" &&
++      !version.thumbnail
++    )
++      throw new AppError(422, "Add the final YouTube thumbnail before review.");
+     const [updated] = await tx
+       .update(s.platformVariants)
+       .set({ reviewStatus: "READY_FOR_REVIEW", updatedAt: new Date() })
+@@ -301,16 +408,14 @@ export async function decide(
+     requireVersion(v.currentVersionId, data.expectedVersionId);
+     if (v.reviewStatus !== "READY_FOR_REVIEW")
+       throw new AppError(409, "This version is not awaiting review.");
+-    await tx
+-      .insert(s.reviewDecisions)
+-      .values({
+-        id: id(),
+-        platformVariantId: variantId,
+-        versionId: data.expectedVersionId,
+-        reviewerId: actor.id,
+-        decision,
+-        reason: data.reason,
+-      });
++    await tx.insert(s.reviewDecisions).values({
++      id: id(),
++      platformVariantId: variantId,
++      versionId: data.expectedVersionId,
++      reviewerId: actor.id,
++      decision,
++      reason: data.reason,
++    });
+     const [updated] = await tx
+       .update(s.platformVariants)
+       .set({ reviewStatus: decision, updatedAt: new Date() })
+@@ -379,18 +484,16 @@ export async function recordPublishing(
+         422,
+         "Actual publication time and HTTPS post URL required.",
+       );
+-    await tx
+-      .insert(s.publishingRecords)
+-      .values({
+-        id: id(),
+-        platformVariantId: variantId,
+-        versionId: data.expectedVersionId,
+-        status: data.status,
+-        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+-        publishedAt: data.publishedAt ? new Date(data.publishedAt) : null,
+-        publishedUrl: data.publishedUrl || null,
+-        createdBy: actor.id,
+-      });
++    await tx.insert(s.publishingRecords).values({
++      id: id(),
++      platformVariantId: variantId,
++      versionId: data.expectedVersionId,
++      status: data.status,
++      scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
++      publishedAt: data.publishedAt ? new Date(data.publishedAt) : null,
++      publishedUrl: data.publishedUrl || null,
++      createdBy: actor.id,
++    });
+     await tx
+       .update(s.platformVariants)
+       .set({ publishingStatus: data.status, updatedAt: new Date() })
+diff --git a/src/lib/validation.ts b/src/lib/validation.ts
+index 78454a7..b563b7d 100644
+--- a/src/lib/validation.ts
++++ b/src/lib/validation.ts
+@@ -1,5 +1,11 @@
+ import { z } from "zod";
+-export const platformSchema = z.enum(["INSTAGRAM", "FACEBOOK", "LINKEDIN"]);
++import {
++  contentFormatValues,
++  isPlatformFormatAllowed,
++  platformValues,
++} from "./platform-config";
++export const platformSchema = z.enum(platformValues);
++export const contentFormatSchema = z.enum(contentFormatValues);
+ export const dateSchema = z
+   .string()
+   .regex(/^\d{4}-\d{2}-\d{2}$/)
+@@ -22,13 +28,20 @@ export const contentSchema = z
+     internalReference: z.string().trim().min(1).max(100),
+   })
+   .strict();
++const snapshotFields = {
++  caption: z.string().trim().min(1).max(10000),
++  headline: z.string().trim().max(200).default(""),
++  script: z.string().trim().max(60000).default(""),
++  chapters: z.string().trim().max(10000).default(""),
++  tags: z.string().trim().max(2000).default(""),
++  ctaText: z.string().trim().max(300).default(""),
++  ctaUrl: urlSchema.default(""),
++  mediaIds: z.array(z.string().min(1)).max(20).default([]),
++  videoId: z.string().min(1).nullable().default(null),
++  thumbnailId: z.string().min(1).nullable().default(null),
++};
+ export const snapshotSchema = z
+-  .object({
+-    caption: z.string().trim().min(1).max(10000),
+-    ctaText: z.string().trim().max(300).default(""),
+-    ctaUrl: urlSchema.default(""),
+-    mediaIds: z.array(z.string().min(1)).max(20).default([]),
+-  })
++  .object(snapshotFields)
+   .strict()
+   .refine(
+     (x) => new Set(x.mediaIds).size === x.mediaIds.length,
+@@ -37,12 +50,21 @@ export const snapshotSchema = z
+ export const variantSchema = z
+   .object({
+     platform: platformSchema,
++    contentFormat: contentFormatSchema.default("IMAGE_POST"),
+     plannedPublishAt: z.iso.datetime(),
+-    ...snapshotSchema.shape,
++    ...snapshotFields,
+   })
+-  .strict();
++  .strict()
++  .superRefine((value, ctx) => {
++    if (!isPlatformFormatAllowed(value.platform, value.contentFormat))
++      ctx.addIssue({
++        code: "custom",
++        path: ["contentFormat"],
++        message: "That format is not available for this platform.",
++      });
++  });
+ export const editSchema = z
+-  .object({ ...snapshotSchema.shape, expectedVersionId: z.string().min(1) })
++  .object({ ...snapshotFields, expectedVersionId: z.string().min(1) })
+   .strict();
+ export const decisionSchema = z
+   .object({
+diff --git a/tests/workflow.test.ts b/tests/workflow.test.ts
+index 47e4e50..5a7535e 100644
+--- a/tests/workflow.test.ts
++++ b/tests/workflow.test.ts
+@@ -142,7 +142,9 @@ describe("Required three-platform workflow through authenticated API", () => {
+     }
+     const queue = await call("review-queue", "GET", undefined, johnCookie);
+     expect(queue.data).toHaveLength(3);
+-    expect(queue.data.map((v: { plannedPublishAt: string }) => v.plannedPublishAt)).toEqual(
++    expect(
++      queue.data.map((v: { plannedPublishAt: string }) => v.plannedPublishAt),
++    ).toEqual(
+       [...queue.data]
+         .sort(
+           (a: { plannedPublishAt: string }, b: { plannedPublishAt: string }) =>
+@@ -557,6 +559,155 @@ describe("Integrity and authorization", () => {
+     );
+     expect(r.status).toBeGreaterThanOrEqual(400);
+   });
++  it("Supports independently approved YouTube and TikTok video adaptations", async () => {
++    const sign = await call("media/sign-upload", "POST", {
++      filename: "podcast-review.mp4",
++      mimeType: "video/mp4",
++      bytes: 16,
++    });
++    expect(sign.status).toBe(201);
++    expect(sign.data.mode).toBe("local");
++
++    const videoForm = new FormData();
++    videoForm.set(
++      "file",
++      new File(
++        [Buffer.from([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109])],
++        "podcast-review.mp4",
++        { type: "video/mp4" },
++      ),
++    );
++    videoForm.set(
++      "altText",
++      "Final landscape podcast review cut with two speakers",
++    );
++    const uploaded = await call("media", "POST", videoForm);
++    expect(uploaded.status).toBe(201);
++    expect(uploaded.data.resourceType).toBe("video");
++
++    const youtube = await call(
++      `content/${state.itemId}/platform-variants`,
++      "POST",
++      {
++        platform: "YOUTUBE",
++        contentFormat: "LONG_VIDEO",
++        plannedPublishAt: new Date(Date.now() + 2 * 86400000).toISOString(),
++        headline: "Build Better Homes: Planning Before You Build",
++        caption: "Final YouTube episode description.",
++        script: "Final transcript for the completed episode.",
++        chapters: "00:00 Introduction\n02:10 Planning discussion",
++        tags: "home planning, residential design",
++        ctaText: "Explore PLIRIS",
++        ctaUrl: "https://plirisco.com",
++        mediaIds: [],
++        videoId: uploaded.data.id,
++        thumbnailId: state.media[0],
++      },
++    );
++    expect(youtube.status).toBe(201);
++    expect(youtube.data.contentFormat).toBe("LONG_VIDEO");
++    expect(
++      (
++        await call(
++          `platform-variants/${youtube.data.id}/submit-review`,
++          "POST",
++          { expectedVersionId: youtube.data.currentVersionId },
++        )
++      ).status,
++    ).toBe(201);
++
++    const tiktok = await call(
++      `content/${state.itemId}/platform-variants`,
++      "POST",
++      {
++        platform: "TIKTOK",
++        contentFormat: "SHORT_VIDEO",
++        plannedPublishAt: new Date(Date.now() + 2 * 86400000).toISOString(),
++        caption: "The first planning question every homeowner should ask.",
++        tags: "#HomeDesign #BuildBetterHomes",
++        videoId: uploaded.data.id,
++      },
++    );
++    expect(tiktok.status).toBe(201);
++    expect(
++      (
++        await call(
++          `platform-variants/${tiktok.data.id}/submit-review`,
++          "POST",
++          { expectedVersionId: tiktok.data.currentVersionId },
++        )
++      ).status,
++    ).toBe(201);
++
++    for (const variant of [youtube.data, tiktok.data])
++      expect(
++        (
++          await call(
++            `platform-variants/${variant.id}/approve`,
++            "POST",
++            { expectedVersionId: variant.currentVersionId },
++            johnCookie,
++          )
++        ).status,
++      ).toBe(201);
++
++    const revised = await call(
++      `platform-variants/${youtube.data.id}`,
++      "PATCH",
++      {
++        expectedVersionId: youtube.data.currentVersionId,
++        headline: "Build Better Homes: Plan Before You Build",
++        caption: "Final YouTube episode description.",
++        script: "Final corrected transcript for the completed episode.",
++        chapters: "00:00 Introduction\n02:10 Planning discussion",
++        tags: "home planning, residential design",
++        ctaText: "Explore PLIRIS",
++        ctaUrl: "https://plirisco.com",
++        mediaIds: [],
++        videoId: uploaded.data.id,
++        thumbnailId: state.media[0],
++      },
++    );
++    expect(revised.status).toBe(200);
++    expect(revised.data.reviewStatus).toBe("READY_FOR_REVIEW");
++    const items = await call("content");
++    const currentTikTok = items.data[0].variants.find(
++      (variant: { id: string }) => variant.id === tiktok.data.id,
++    );
++    expect(currentTikTok.reviewStatus).toBe("APPROVED");
++    expect(
++      (await call(`platform-variants/${youtube.data.id}/history`)).data
++        .versions,
++    ).toHaveLength(2);
++
++    const invalid = await call(
++      `content/${state.itemId}/platform-variants`,
++      "POST",
++      {
++        platform: "YOUTUBE",
++        contentFormat: "IMAGE_POST",
++        plannedPublishAt: new Date().toISOString(),
++        caption: "Invalid combination",
++        mediaIds: [state.media[0]],
++      },
++    );
++    expect(invalid.status).toBe(422);
++
++    const mixedMedia = await call(
++      `content/${state.itemId}/platform-variants`,
++      "POST",
++      {
++        platform: "YOUTUBE",
++        contentFormat: "SHORT_VIDEO",
++        plannedPublishAt: new Date().toISOString(),
++        headline: "Invalid mixed-media short",
++        caption: "A video adaptation cannot contain hidden carousel media.",
++        mediaIds: [state.media[0]],
++        videoId: uploaded.data.id,
++      },
++    );
++    expect(mixedMedia.status).toBe(422);
++  });
+   it("Producer can archive content while reviewer cannot delete it", async () => {
+     const forbidden = await call(
+       `content/${state.itemId}`,
+-- 
+2.51.1
+

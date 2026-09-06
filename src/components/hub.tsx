@@ -281,7 +281,7 @@ export function Hub({
               </div>
               <section className="coverage">
                 <div>
-                  <p className="eyebrow">NEXT 7 DAYS APPROVAL COVERAGE</p>
+                  <p className="eyebrow">APPROVAL COVERAGE THROUGH NEXT 7 DAYS</p>
                   <h2>
                     {data.coverage.approved}{" "}
                     <span>of {data.coverage.total} adaptations approved</span>

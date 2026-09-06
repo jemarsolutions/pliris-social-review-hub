@@ -35,12 +35,10 @@ export function requireDecision(reason: string, decision: string) {
 export function coverage<
   T extends { plannedPublishAt: Date | string; reviewStatus: string },
 >(variants: T[], now = new Date()) {
-  // Rolling 168 hours; includes now, excludes exactly seven days from now.
+  // Include overdue work and all work planned before the seven-day cutoff.
   const end = now.getTime() + 7 * 24 * 60 * 60 * 1000;
   const upcoming = variants.filter(
-    (v) =>
-      new Date(v.plannedPublishAt).getTime() >= now.getTime() &&
-      new Date(v.plannedPublishAt).getTime() < end,
+    (v) => new Date(v.plannedPublishAt).getTime() < end,
   );
   const approved = upcoming.filter((v) => v.reviewStatus === "APPROVED").length;
   return {

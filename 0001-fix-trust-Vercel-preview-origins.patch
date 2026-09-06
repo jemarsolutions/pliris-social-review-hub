@@ -1,0 +1,168 @@
+From 2f758e6040a8e06d44431ac7ddccab23ee32aa3b Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 6 Sep 2026 14:24:17 -0400
+Subject: [PATCH] fix: trust Vercel preview origins
+
+---
+ src/lib/api-auth.ts    |  7 +++----
+ src/lib/app-origin.ts  | 42 ++++++++++++++++++++++++++++++++++++++++++
+ src/lib/auth.ts        | 11 +++++------
+ tests/workflow.test.ts | 23 +++++++++++++++++++++++
+ 4 files changed, 73 insertions(+), 10 deletions(-)
+ create mode 100644 src/lib/app-origin.ts
+
+diff --git a/src/lib/api-auth.ts b/src/lib/api-auth.ts
+index bcee8f3..a734bbb 100644
+--- a/src/lib/api-auth.ts
++++ b/src/lib/api-auth.ts
+@@ -4,6 +4,7 @@ import { getAuth } from "./auth";
+ import { getDb } from "@/db";
+ import { user } from "@/db/schema";
+ import { AppError, type Actor, type Role } from "./domain";
++import { isTrustedAppOrigin } from "./app-origin";
+ export async function authenticate(request: Request): Promise<Actor> {
+   const bearer = request.headers.get("authorization");
+   if (bearer) {
+@@ -28,10 +29,8 @@ export async function authenticate(request: Request): Promise<Actor> {
+   if (!session) throw new AppError(401, "Authentication required.");
+   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+     const origin = request.headers.get("origin");
+-    const expected = new URL(
+-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+-    ).origin;
+-    if (origin !== expected) throw new AppError(403, "Invalid request origin.");
++    if (!isTrustedAppOrigin(origin))
++      throw new AppError(403, "Invalid request origin.");
+   }
+   return {
+     id: session.user.id,
+diff --git a/src/lib/app-origin.ts b/src/lib/app-origin.ts
+new file mode 100644
+index 0000000..df7f504
+--- /dev/null
++++ b/src/lib/app-origin.ts
+@@ -0,0 +1,42 @@
++const LOCAL_ORIGIN = "http://localhost:3000";
++
++function origin(value: string | undefined) {
++  if (!value) return null;
++  try {
++    return new URL(value.includes("://") ? value : `https://${value}`).origin;
++  } catch {
++    return null;
++  }
++}
++
++export function getTrustedAppOrigins() {
++  const values = [
++    process.env.NEXT_PUBLIC_APP_URL,
++    process.env.VERCEL_BRANCH_URL,
++    process.env.VERCEL_URL,
++    process.env.VERCEL_PROJECT_PRODUCTION_URL,
++  ];
++  const trusted = values
++    .map(origin)
++    .filter((value): value is string => !!value);
++  return [...new Set(trusted.length ? trusted : [LOCAL_ORIGIN])];
++}
++
++export function getAppBaseUrl() {
++  const previewUrl =
++    process.env.VERCEL_ENV === "preview"
++      ? origin(process.env.VERCEL_BRANCH_URL) || origin(process.env.VERCEL_URL)
++      : null;
++  return (
++    previewUrl ||
++    origin(process.env.NEXT_PUBLIC_APP_URL) ||
++    origin(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
++    origin(process.env.VERCEL_URL) ||
++    LOCAL_ORIGIN
++  );
++}
++
++export function isTrustedAppOrigin(value: string | null) {
++  const normalized = origin(value || undefined);
++  return !!normalized && getTrustedAppOrigins().includes(normalized);
++}
+diff --git a/src/lib/auth.ts b/src/lib/auth.ts
+index 4cf319f..35f3068 100644
+--- a/src/lib/auth.ts
++++ b/src/lib/auth.ts
+@@ -2,15 +2,17 @@ import { betterAuth } from "better-auth";
+ import { drizzleAdapter } from "better-auth/adapters/drizzle";
+ import { getDb } from "@/db";
+ import * as schema from "@/db/schema";
++import { getAppBaseUrl, getTrustedAppOrigins } from "./app-origin";
+ let instance: ReturnType<typeof createAuth> | undefined;
+ function createAuth() {
+   if (!process.env.AUTH_SECRET || process.env.AUTH_SECRET.length < 32)
+     throw new Error(
+       "Set AUTH_SECRET to a random secret of at least 32 characters.",
+     );
++  const baseURL = getAppBaseUrl();
+   return betterAuth({
+     secret: process.env.AUTH_SECRET,
+-    baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
++    baseURL,
+     database: drizzleAdapter(getDb(), { provider: "pg", schema }),
+     emailAndPassword: {
+       enabled: true,
+@@ -29,12 +31,9 @@ function createAuth() {
+     },
+     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
+     rateLimit: { enabled: true, storage: "database", modelName: "rateLimit" },
+-    trustedOrigins: [
+-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+-    ],
++    trustedOrigins: getTrustedAppOrigins(),
+     advanced: {
+-      useSecureCookies:
+-        process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false,
++      useSecureCookies: baseURL.startsWith("https://"),
+     },
+   });
+ }
+diff --git a/tests/workflow.test.ts b/tests/workflow.test.ts
+index 5a7535e..38e7cae 100644
+--- a/tests/workflow.test.ts
++++ b/tests/workflow.test.ts
+@@ -16,6 +16,8 @@ const { getDb } = await import("../src/db/index");
+ const s = await import("../src/db/schema");
+ const { createUser } = await import("../scripts/create-user");
+ const { getAuth } = await import("../src/lib/auth");
++const { getAppBaseUrl, getTrustedAppOrigins, isTrustedAppOrigin } =
++  await import("../src/lib/app-origin");
+ const routes = await import("../src/app/api/v1/[...path]/route");
+ const mediaRoute = await import("../src/app/api/media/[id]/route");
+ let adminCookie = "",
+@@ -252,6 +254,27 @@ describe("Required three-platform workflow through authenticated API", () => {
+   });
+ });
+ describe("Integrity and authorization", () => {
++  it("Trusts the active Vercel preview and branch origins", () => {
++    process.env.VERCEL_ENV = "preview";
++    process.env.VERCEL_BRANCH_URL =
++      "plirissocialhub-git-feature-podcast.example.vercel.app";
++    process.env.VERCEL_URL = "plirissocialhub-deployment.example.vercel.app";
++    expect(getAppBaseUrl()).toBe(
++      "https://plirissocialhub-git-feature-podcast.example.vercel.app",
++    );
++    expect(getTrustedAppOrigins()).toContain(
++      "https://plirissocialhub-deployment.example.vercel.app",
++    );
++    expect(
++      isTrustedAppOrigin(
++        "https://plirissocialhub-git-feature-podcast.example.vercel.app",
++      ),
++    ).toBe(true);
++    expect(isTrustedAppOrigin("https://attacker.example")).toBe(false);
++    delete process.env.VERCEL_ENV;
++    delete process.env.VERCEL_BRANCH_URL;
++    delete process.env.VERCEL_URL;
++  });
+   it("Editing approved content invalidates approval without deleting the approved version", async () => {
+     const previous = state.versions.INSTAGRAM;
+     const result = await call(
+-- 
+2.51.1
+

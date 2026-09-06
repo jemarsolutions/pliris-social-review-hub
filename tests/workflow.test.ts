@@ -490,9 +490,9 @@ describe("Integrity and authorization", () => {
       { plannedPublishAt: "2026-09-13T12:00:00Z", reviewStatus: "APPROVED" },
     ];
     expect(coverage(rows, now)).toMatchObject({
-      approved: 1,
-      total: 2,
-      percentage: 50,
+      approved: 2,
+      total: 3,
+      percentage: 67,
     });
     expect(coverage([], now)).toMatchObject({
       approved: 0,

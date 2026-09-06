@@ -109,7 +109,7 @@ Changing any approved payload field—including caption, title, script, chapters
 
 Approval and publishing states are separate. Manual scheduling/publication records require current approval and an explicit producer action. Editing approved content resets the current publishing state to Unscheduled, while the prior publishing record stays in history. Published content is not edited on a social network by this app.
 
-The coverage window is rolling **168 hours**, including now and excluding the exact end boundary. The numerator is current approved platform variants; the denominator is all active variants planned in that window. All variants require review. Empty windows show no coverage percentage rather than imply 100%. The calendar is Monday–Sunday and uses UTC; its previous/current/next controls do not change content dates.
+Approval coverage includes overdue active variants and all active variants planned before the next **168-hour** cutoff. The numerator is current approved platform variants; the denominator is all included active variants. All variants require review. The dashboard cannot report 100% while an overdue review remains open. Empty windows show no coverage percentage rather than imply 100%. The calendar is Monday–Sunday and uses UTC; its previous/current/next controls do not change content dates.
 
 ## Security and integrity
 
