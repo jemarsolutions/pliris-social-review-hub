@@ -6,6 +6,8 @@ Connect the private repository, Neon, Cloudinary and Vercel; run the live-provid
 
 ## P1
 
+- Podcast episode bundles that link one source episode to several independently reviewed short clips.
+- Optional transcript import/caption-file attachment after the source and review rules are agreed.
 - User/account maintenance UI with explicit admin authorization, reviewer assignment including Royal.
 - Version comparisons, more detailed audit filtering, date/platform filters on content studio.
 - Calendar drag/drop only after agreeing which date changes require review.
@@ -21,7 +23,7 @@ Connect the private repository, Neon, Cloudinary and Vercel; run the live-provid
 - Outgoing webhook delivery with retries and revocable service identities.
 - Meta/Instagram/LinkedIn publishing or scheduling, only behind explicit authorization.
 - Actual performance data; keep marketing metrics separate from review KPIs.
-- Optional AI content/image generation, video workflow and notifications only after cost review.
+- Optional AI content/image/video generation and notifications only after cost review.
 - Multi-tenant architecture, billing and native apps only if product adoption justifies them.
 
 Formal PLIRIS adoption requires a separate ownership, hosting/commercial-plan, source-of-truth and governance decision. Do not create Trello cards, modify WCS or change department priorities as part of this personal prototype.

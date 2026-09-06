@@ -59,6 +59,7 @@ export function Review({
     load().catch((e) => setError(e.message));
     setVersionId(variant.currentVersionId);
     setSlide(0);
+    setTab("Review");
   }, [variant.id, variant.currentVersionId, variant.reviewStatus]);
   const version =
     history?.versions.find((v) => v.id === versionId) || variant.version;
@@ -67,6 +68,13 @@ export function Review({
     (d) => d.decision.versionId === version.id,
   );
   const media = version.media[slide];
+  const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(variant.contentFormat);
+  const accountName =
+    variant.platform === "INSTAGRAM"
+      ? "plirisco"
+      : variant.platform === "YOUTUBE"
+        ? "Build Better Homes"
+        : "PLIRIS Co";
   async function action(path: string, data: unknown) {
     setBusy(true);
     setError("");
@@ -89,7 +97,7 @@ export function Review({
       <div className="preview-column">
         <header className="preview-heading">
           <Platform value={variant.platform} />
-          <span>Platform preview · Approximate layout</span>
+          <span>{label(variant.contentFormat)} · Platform preview</span>
         </header>
         <div
           className={`social-preview social-${variant.platform.toLowerCase()}`}
@@ -97,9 +105,7 @@ export function Review({
           <div className="social-account">
             <div className="brand-avatar">P</div>
             <div>
-              <strong>
-                {variant.platform === "INSTAGRAM" ? "plirisco" : "PLIRIS Co"}
-              </strong>
+              <strong>{accountName}</strong>
               <small>
                 {variant.platform === "LINKEDIN"
                   ? "Residential design · Sample content"
@@ -108,16 +114,40 @@ export function Review({
             </div>
             <MoreHorizontal size={22} />
           </div>
-          {variant.platform !== "INSTAGRAM" && (
+          {!["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
             <p className="caption pre-media">{version.caption}</p>
           )}
-          <div className="preview-media">
-            {media ? (
+          <div
+            className={`preview-media ${
+              isVideo
+                ? `video-preview ${
+                    variant.contentFormat === "SHORT_VIDEO"
+                      ? "portrait-video"
+                      : "landscape-video"
+                  }`
+                : ""
+            }`}
+          >
+            {isVideo && version.video ? (
+              <video
+                controls
+                preload="metadata"
+                aria-label={version.video.altText}
+                src={`/api/media/${version.video.id}`}
+                poster={
+                  version.thumbnail
+                    ? `/api/media/${version.thumbnail.id}?thumb=1`
+                    : `/api/media/${version.video.id}?thumb=1`
+                }
+              />
+            ) : media ? (
               <img src={`/api/media/${media.id}`} alt={media.altText} />
             ) : (
-              <div className="no-media">No image attached</div>
+              <div className="no-media">
+                No {isVideo ? "video" : "image"} attached
+              </div>
             )}
-            {media && (
+            {!isVideo && media && (
               <button
                 className="enlarge"
                 aria-label="Enlarge image"
@@ -126,7 +156,7 @@ export function Review({
                 <Maximize2 size={18} />
               </button>
             )}
-            {version.media.length > 1 && (
+            {!isVideo && version.media.length > 1 && (
               <>
                 <button
                   className="slide-arrow previous"
@@ -151,7 +181,7 @@ export function Review({
             )}
           </div>
           <div className="preview-icons" aria-hidden="true">
-            {variant.platform === "INSTAGRAM" ? (
+            {["INSTAGRAM", "TIKTOK"].includes(variant.platform) ? (
               <>
                 <Heart />
                 <MessageCircle />
@@ -168,9 +198,14 @@ export function Review({
               </>
             )}
           </div>
-          {variant.platform === "INSTAGRAM" && (
+          {isVideo && version.headline && (
+            <h3 className="video-headline">{version.headline}</h3>
+          )}
+          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
             <p className="caption">
-              <strong>plirisco </strong>
+              {variant.platform !== "YOUTUBE" && (
+                <strong>{accountName} </strong>
+              )}
               {version.caption}
             </p>
           )}
@@ -181,7 +216,7 @@ export function Review({
             </div>
           )}
         </div>
-        {version.media.length > 1 && (
+        {!isVideo && version.media.length > 1 && (
           <div className="thumbnails" aria-label="Carousel slides">
             {version.media.map((m, i) => (
               <button
@@ -219,7 +254,7 @@ export function Review({
           </span>
         </div>
         <div className="detail-tabs" role="tablist" aria-label="Review details">
-          {["Review", "History"].map((t) => (
+          {["Review", ...(isVideo ? ["Script"] : []), "History"].map((t) => (
             <button
               key={t}
               role="tab"
@@ -233,7 +268,29 @@ export function Review({
             </button>
           ))}
         </div>
-        {tab === "Review" ? (
+        {tab === "Script" ? (
+          <section className="script-panel">
+            <p className="eyebrow">FINAL PRODUCTION REFERENCE</p>
+            <h3>{version.headline || item.title}</h3>
+            {version.script ? (
+              <pre>{version.script}</pre>
+            ) : (
+              <p>No final script or transcript was attached to this version.</p>
+            )}
+            {version.chapters && (
+              <>
+                <h3>Chapters and timestamps</h3>
+                <pre>{version.chapters}</pre>
+              </>
+            )}
+            {version.tags && (
+              <>
+                <h3>Tags and publishing notes</h3>
+                <pre>{version.tags}</pre>
+              </>
+            )}
+          </section>
+        ) : tab === "Review" ? (
           <>
             <dl className="details">
               <div>
@@ -248,6 +305,23 @@ export function Review({
                 <dt>Publishing</dt>
                 <dd>{label(variant.publishingStatus)}</dd>
               </div>
+              <div>
+                <dt>Format</dt>
+                <dd>{label(variant.contentFormat)}</dd>
+              </div>
+              {isVideo && version.video && (
+                <div>
+                  <dt>Video</dt>
+                  <dd>
+                    {version.video.width && version.video.height
+                      ? `${version.video.width}×${version.video.height}`
+                      : "Dimensions pending"}
+                    {version.video.durationMs
+                      ? ` · ${Math.round(version.video.durationMs / 1000)} seconds`
+                      : ""}
+                  </dd>
+                </div>
+              )}
               {version.ctaText && (
                 <div>
                   <dt>Call to action</dt>

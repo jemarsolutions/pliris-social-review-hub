@@ -1,18 +1,38 @@
+import type { ContentFormatValue, PlatformValue } from "@/lib/platform-config";
+export type Platform = PlatformValue;
+export type ContentFormat = ContentFormatValue;
+export type MediaAsset = {
+  id: string;
+  altText: string;
+  sortOrder: number;
+  resourceType: "image" | "video";
+  mimeType: string;
+  width: number;
+  height: number;
+  durationMs: number;
+};
 export type Version = {
   id: string;
   platformVariantId: string;
   versionNumber: number;
   caption: string;
+  headline: string;
+  script: string;
+  chapters: string;
+  tags: string;
   ctaText: string;
   ctaUrl: string;
-  media: { id: string; altText: string; sortOrder: number }[];
+  media: MediaAsset[];
+  video: MediaAsset | null;
+  thumbnail: MediaAsset | null;
   createdAt: string;
   createdBy: string;
 };
 export type Variant = {
   id: string;
   contentItemId: string;
-  platform: "INSTAGRAM" | "FACEBOOK" | "LINKEDIN";
+  platform: Platform;
+  contentFormat: ContentFormat;
   plannedPublishAt: string;
   reviewStatus: string;
   publishingStatus: string;

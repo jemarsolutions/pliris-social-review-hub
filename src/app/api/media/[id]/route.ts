@@ -1,6 +1,7 @@
 import { authenticate, apiError } from "@/lib/api-auth";
 import { deliverMedia } from "@/lib/media";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export async function GET(
   req: Request,
   ctx: { params: Promise<{ id: string }> },

@@ -18,7 +18,7 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
 | POST   | `/content`                                | Producer creates idea                                                      |
 | GET    | `/content/:id`                            | Content with all current variants                                          |
 | PATCH  | `/content/:id`                            | Producer edits operational metadata                                        |
-| POST   | `/content/:id/platform-variants`          | Producer creates one platform draft                                        |
+| POST   | `/content/:id/platform-variants`          | Producer creates one platform/format draft                                 |
 | PATCH  | `/platform-variants/:id`                  | Producer creates a new payload version if changed                          |
 | POST   | `/platform-variants/:id/plan`             | Producer changes operational planned time                                  |
 | POST   | `/platform-variants/:id/submit-review`    | Producer submits draft/in-production version                               |
@@ -32,9 +32,21 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
 | GET    | `/revisions`                              | Current Changes requested variants                                         |
 | GET    | `/calendar?start=ISO&end=ISO`             | Planned variants in inclusive-start/exclusive-end range                    |
 | GET    | `/coverage`                               | Next 168 hours coverage and earliest unapproved adaptation                 |
-| POST   | `/media`                                  | Producer multipart image upload: `file`, `altText`                         |
+| POST   | `/media`                                  | Producer multipart image upload; local demo also accepts small videos      |
+| POST   | `/media/sign-upload`                      | Producer requests a signed direct Cloudinary video upload                  |
+| POST   | `/media/complete-video`                   | Producer verifies and records a completed Cloudinary video                 |
 
-Images are read through authenticated `GET /api/media/:id`; append `?thumb=1` for a smaller transformed preview. Ordered `version.media` entries contain asset IDs and immutable alt text.
+Media is read through authenticated `GET /api/media/:id`; append `?thumb=1` for an image thumbnail or video poster. Image payloads are streamed, while authorized production video requests redirect to authenticated Cloudinary delivery. Ordered `version.media`, `version.video` and `version.thumbnail` entries contain immutable metadata snapshots.
+
+Supported platform/format combinations:
+
+| Platform  | Formats                                       |
+| --------- | --------------------------------------------- |
+| Instagram | Image post, carousel, short video             |
+| Facebook  | Image post, carousel, short video, long video |
+| LinkedIn  | Image post, carousel, long video              |
+| YouTube   | Short video, long video                       |
+| TikTok    | Short video                                   |
 
 ## Payloads
 
@@ -55,11 +67,32 @@ Create variant:
 ```json
 {
   "platform": "INSTAGRAM",
+  "contentFormat": "CAROUSEL",
   "plannedPublishAt": "2026-09-07T16:00:00.000Z",
   "caption": "Final caption",
   "ctaText": "Learn more",
   "ctaUrl": "https://example.com/",
   "mediaIds": ["asset-id-1", "asset-id-2"]
+}
+```
+
+Create a YouTube podcast video:
+
+```json
+{
+  "platform": "YOUTUBE",
+  "contentFormat": "LONG_VIDEO",
+  "plannedPublishAt": "2026-09-09T16:00:00.000Z",
+  "headline": "Final podcast episode title",
+  "caption": "Final YouTube description",
+  "script": "Final transcript or approved script...",
+  "chapters": "00:00 Introduction\n01:42 Main topic",
+  "tags": "PLIRIS, podcast",
+  "ctaText": "Subscribe",
+  "ctaUrl": "https://example.com/",
+  "mediaIds": [],
+  "videoId": "video-asset-id",
+  "thumbnailId": "thumbnail-asset-id"
 }
 ```
 
@@ -69,9 +102,15 @@ Edit variant (all payload fields are submitted; ordered `mediaIds` are authorita
 {
   "expectedVersionId": "current-version-id",
   "caption": "Revised caption",
+  "headline": "",
+  "script": "",
+  "chapters": "",
+  "tags": "",
   "ctaText": "Learn more",
   "ctaUrl": "https://example.com/",
-  "mediaIds": ["asset-id-2", "asset-id-1"]
+  "mediaIds": ["asset-id-2", "asset-id-1"],
+  "videoId": null,
+  "thumbnailId": null
 }
 ```
 
@@ -84,7 +123,16 @@ Review / submission:
 }
 ```
 
-`reason` is optional for approval; required/nonblank for request-revision and reject. Submit-review only requires `expectedVersionId`. Reviewed content must have a nonblank caption and at least one image. Each version gets one final decision; revisiting a rejected/approved/changes-requested version requires a genuinely changed new version.
+`reason` is optional for approval; required/nonblank for request-revision and reject. Submit-review only requires `expectedVersionId`. Image formats require at least one image; video formats require a video. YouTube requires a title, and YouTube long-form requires a thumbnail. Each version gets one final decision; revisiting a rejected/approved/changes-requested version requires a genuinely changed new version.
+
+### Direct video upload
+
+1. Request upload authorization from `/media/sign-upload` with `filename`, `mimeType` and `bytes`.
+2. In production, send the file directly to the returned Cloudinary URL using the returned signed fields. Files over 20 MB may be sent in sequential chunks sharing one upload ID.
+3. Send Cloudinary's final `public_id`, `version`, `signature`, dimensions, duration and file metadata to `/media/complete-video`.
+4. The server verifies Cloudinary's response signature before recording the asset. A forged or incomplete completion response is rejected.
+
+The production limit is 1 GB and accepted MIME types are MP4, QuickTime/MOV and WebM. The API secret is server-only.
 
 Comment:
 
@@ -115,7 +163,7 @@ Supported publishing states: UNSCHEDULED, READY_TO_SCHEDULE, SCHEDULED, PUBLISHE
 - 403 incorrect role or origin.
 - 404 missing resource/endpoint.
 - 409 stale version, invalid workflow state, duplicate platform/reference/decision.
-- 413 body too large.
+- 413 body too large or direct-upload limit exceeded.
 - 422 invalid input, missing media or required reason.
 - 503 Cloudinary configuration unavailable.
 - 500 generic internal failure; database credentials/details are not returned.

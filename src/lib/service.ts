@@ -19,6 +19,7 @@ import {
   dateSchema,
   decisionSchema,
 } from "./validation";
+import type { ContentFormatValue, PlatformValue } from "./platform-config";
 const id = () => crypto.randomUUID();
 async function audit(
   tx: Transaction,
@@ -27,16 +28,14 @@ async function audit(
   entityId: string,
   metadata: Record<string, unknown> = {},
 ) {
-  await tx
-    .insert(s.auditEvents)
-    .values({
-      id: id(),
-      actorId: actor.id,
-      action,
-      entityType: "platform_variant",
-      entityId,
-      metadata: { ...metadata, integration: !!actor.integration },
-    });
+  await tx.insert(s.auditEvents).values({
+    id: id(),
+    actorId: actor.id,
+    action,
+    entityType: "platform_variant",
+    entityId,
+    metadata: { ...metadata, integration: !!actor.integration },
+  });
 }
 async function lock(tx: Transaction, variantId: string) {
   const [v] = await tx
@@ -52,18 +51,37 @@ async function lock(tx: Transaction, variantId: string) {
   if (item.archivedAt) throw new AppError(409, "This content is archived.");
   return v;
 }
+async function snapshotAsset(
+  tx: Transaction,
+  mediaId: string,
+  expectedType: "image" | "video",
+  sortOrder: number,
+) {
+  const [m] = await tx
+    .select()
+    .from(s.mediaAssets)
+    .where(eq(s.mediaAssets.id, mediaId));
+  if (!m) throw new AppError(422, "Media asset does not exist.");
+  if (m.resourceType !== expectedType)
+    throw new AppError(422, `Expected a ${expectedType} asset.`);
+  return {
+    id: m.id,
+    altText: m.altText,
+    sortOrder,
+    resourceType: expectedType,
+    mimeType: m.mimeType,
+    width: m.width,
+    height: m.height,
+    durationMs: m.durationMs,
+  } as s.MediaSnapshot;
+}
 async function snapshotMedia(tx: Transaction, mediaIds: string[]) {
   if (new Set(mediaIds).size !== mediaIds.length)
     throw new AppError(422, "Duplicate media.");
   return Promise.all(
-    mediaIds.map(async (mediaId, sortOrder) => {
-      const [m] = await tx
-        .select()
-        .from(s.mediaAssets)
-        .where(eq(s.mediaAssets.id, mediaId));
-      if (!m) throw new AppError(422, "Media asset does not exist.");
-      return { id: m.id, altText: m.altText, sortOrder };
-    }),
+    mediaIds.map((mediaId, sortOrder) =>
+      snapshotAsset(tx, mediaId, "image", sortOrder),
+    ),
   );
 }
 async function insertVersion(
@@ -73,42 +91,98 @@ async function insertVersion(
   versionNumber: number,
   data: {
     caption: string;
+    headline: string;
+    script: string;
+    chapters: string;
+    tags: string;
     ctaText: string;
     ctaUrl: string;
     mediaIds: string[];
+    videoId: string | null;
+    thumbnailId: string | null;
   },
 ) {
   const media = await snapshotMedia(tx, data.mediaIds);
+  const video = data.videoId
+    ? await snapshotAsset(tx, data.videoId, "video", media.length)
+    : null;
+  const thumbnail = data.thumbnailId
+    ? await snapshotAsset(
+        tx,
+        data.thumbnailId,
+        "image",
+        media.length + (video ? 1 : 0),
+      )
+    : null;
   const versionId = id();
-  await tx
-    .insert(s.versions)
-    .values({
-      id: versionId,
-      platformVariantId: variantId,
-      versionNumber,
-      caption: data.caption,
-      ctaText: data.ctaText,
-      ctaUrl: data.ctaUrl,
-      media,
-      createdBy: actor.id,
-    });
-  if (media.length)
-    await tx
-      .insert(s.variantMedia)
-      .values(
-        media.map((m) => ({
-          id: id(),
-          platformVariantId: variantId,
-          versionId,
-          mediaAssetId: m.id,
-          sortOrder: m.sortOrder,
-        })),
-      );
+  await tx.insert(s.versions).values({
+    id: versionId,
+    platformVariantId: variantId,
+    versionNumber,
+    caption: data.caption,
+    headline: data.headline,
+    script: data.script,
+    chapters: data.chapters,
+    tags: data.tags,
+    ctaText: data.ctaText,
+    ctaUrl: data.ctaUrl,
+    media,
+    video,
+    thumbnail,
+    createdBy: actor.id,
+  });
+  const linkedMedia = [
+    ...media,
+    ...(video ? [video] : []),
+    ...(thumbnail ? [thumbnail] : []),
+  ];
+  if (linkedMedia.length)
+    await tx.insert(s.variantMedia).values(
+      linkedMedia.map((m) => ({
+        id: id(),
+        platformVariantId: variantId,
+        versionId,
+        mediaAssetId: m.id,
+        sortOrder: m.sortOrder,
+      })),
+    );
   await audit(tx, actor, "VERSION_CREATED", variantId, {
     versionId,
     versionNumber,
   });
   return versionId;
+}
+function assertPayloadShape(
+  platform: PlatformValue,
+  contentFormat: ContentFormatValue,
+  data: {
+    headline: string;
+    script: string;
+    chapters: string;
+    tags: string;
+    mediaIds: string[];
+    videoId: string | null;
+    thumbnailId: string | null;
+  },
+) {
+  const videoFormat = ["SHORT_VIDEO", "LONG_VIDEO"].includes(contentFormat);
+  if (videoFormat && data.mediaIds.length)
+    throw new AppError(
+      422,
+      "Video adaptations cannot include carousel images.",
+    );
+  if (
+    !videoFormat &&
+    (data.videoId ||
+      data.thumbnailId ||
+      data.headline ||
+      data.script ||
+      data.chapters ||
+      data.tags)
+  )
+    throw new AppError(422, "Image adaptations cannot include video fields.");
+  if (platform !== "YOUTUBE" && data.chapters)
+    throw new AppError(422, "Chapters are available only for YouTube.");
 }
 export async function createContent(actor: Actor, input: unknown) {
   requireProducer(actor);
@@ -157,7 +231,8 @@ export async function archiveContent(actor: Actor, contentId: string) {
       .where(eq(s.contentItems.id, contentId))
       .for("update");
     if (!item) throw new AppError(404, "Content not found.");
-    if (item.archivedAt) throw new AppError(409, "Content is already archived.");
+    if (item.archivedAt)
+      throw new AppError(409, "Content is already archived.");
     const [archived] = await tx
       .update(s.contentItems)
       .set({ archivedAt: new Date(), updatedAt: new Date() })
@@ -174,6 +249,7 @@ export async function createVariant(
 ) {
   requireProducer(actor);
   const data = variantSchema.parse(input);
+  assertPayloadShape(data.platform, data.contentFormat, data);
   return getDb().transaction(async (tx) => {
     const [item] = await tx
       .select()
@@ -182,14 +258,13 @@ export async function createVariant(
     if (!item || item.archivedAt)
       throw new AppError(404, "Active content not found.");
     const variantId = id();
-    await tx
-      .insert(s.platformVariants)
-      .values({
-        id: variantId,
-        contentItemId: contentId,
-        platform: data.platform,
-        plannedPublishAt: new Date(data.plannedPublishAt),
-      });
+    await tx.insert(s.platformVariants).values({
+      id: variantId,
+      contentItemId: contentId,
+      platform: data.platform,
+      contentFormat: data.contentFormat,
+      plannedPublishAt: new Date(data.plannedPublishAt),
+    });
     const versionId = await insertVersion(tx, actor, variantId, 1, data);
     const [variant] = await tx
       .update(s.platformVariants)
@@ -210,14 +285,21 @@ export async function editVariant(
   return getDb().transaction(async (tx) => {
     const v = await lock(tx, variantId);
     requireVersion(v.currentVersionId, data.expectedVersionId);
+    assertPayloadShape(v.platform, v.contentFormat, data);
     const [previous] = await tx
       .select()
       .from(s.versions)
       .where(eq(s.versions.id, data.expectedVersionId));
     if (
       previous.caption === data.caption &&
+      previous.headline === data.headline &&
+      previous.script === data.script &&
+      previous.chapters === data.chapters &&
+      previous.tags === data.tags &&
       previous.ctaText === data.ctaText &&
       previous.ctaUrl === data.ctaUrl &&
+      (previous.video?.id || null) === data.videoId &&
+      (previous.thumbnail?.id || null) === data.thumbnailId &&
       JSON.stringify(previous.media.map((m) => m.id)) ===
         JSON.stringify(data.mediaIds)
     )
@@ -233,8 +315,18 @@ export async function editVariant(
       v.reviewStatus === "DRAFT" || v.reviewStatus === "IN_PRODUCTION"
         ? v.reviewStatus
         : "READY_FOR_REVIEW";
-    if (reviewStatus === "READY_FOR_REVIEW" && !data.mediaIds.length)
-      throw new AppError(422, "Reviewable content needs at least one image.");
+    if (
+      reviewStatus === "READY_FOR_REVIEW" &&
+      ["IMAGE_POST", "CAROUSEL"].includes(v.contentFormat) &&
+      !data.mediaIds.length
+    )
+      throw new AppError(422, "Reviewable image content needs an image.");
+    if (
+      reviewStatus === "READY_FOR_REVIEW" &&
+      ["SHORT_VIDEO", "LONG_VIDEO"].includes(v.contentFormat) &&
+      !data.videoId
+    )
+      throw new AppError(422, "Reviewable video content needs a video.");
     const [updated] = await tx
       .update(s.platformVariants)
       .set({
@@ -271,11 +363,26 @@ export async function submitReview(
       .select()
       .from(s.versions)
       .where(eq(s.versions.id, expected));
-    if (!version.caption.trim() || !version.media.length)
-      throw new AppError(
-        422,
-        "Add a caption and at least one image before review.",
-      );
+    if (!version.caption.trim())
+      throw new AppError(422, "Add the final caption or description.");
+    if (
+      ["IMAGE_POST", "CAROUSEL"].includes(v.contentFormat) &&
+      !version.media.length
+    )
+      throw new AppError(422, "Add at least one image before review.");
+    if (
+      ["SHORT_VIDEO", "LONG_VIDEO"].includes(v.contentFormat) &&
+      !version.video
+    )
+      throw new AppError(422, "Upload the final video before review.");
+    if (v.platform === "YOUTUBE" && !version.headline.trim())
+      throw new AppError(422, "Add the final YouTube title before review.");
+    if (
+      v.platform === "YOUTUBE" &&
+      v.contentFormat === "LONG_VIDEO" &&
+      !version.thumbnail
+    )
+      throw new AppError(422, "Add the final YouTube thumbnail before review.");
     const [updated] = await tx
       .update(s.platformVariants)
       .set({ reviewStatus: "READY_FOR_REVIEW", updatedAt: new Date() })
@@ -301,16 +408,14 @@ export async function decide(
     requireVersion(v.currentVersionId, data.expectedVersionId);
     if (v.reviewStatus !== "READY_FOR_REVIEW")
       throw new AppError(409, "This version is not awaiting review.");
-    await tx
-      .insert(s.reviewDecisions)
-      .values({
-        id: id(),
-        platformVariantId: variantId,
-        versionId: data.expectedVersionId,
-        reviewerId: actor.id,
-        decision,
-        reason: data.reason,
-      });
+    await tx.insert(s.reviewDecisions).values({
+      id: id(),
+      platformVariantId: variantId,
+      versionId: data.expectedVersionId,
+      reviewerId: actor.id,
+      decision,
+      reason: data.reason,
+    });
     const [updated] = await tx
       .update(s.platformVariants)
       .set({ reviewStatus: decision, updatedAt: new Date() })
@@ -379,18 +484,16 @@ export async function recordPublishing(
         422,
         "Actual publication time and HTTPS post URL required.",
       );
-    await tx
-      .insert(s.publishingRecords)
-      .values({
-        id: id(),
-        platformVariantId: variantId,
-        versionId: data.expectedVersionId,
-        status: data.status,
-        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
-        publishedAt: data.publishedAt ? new Date(data.publishedAt) : null,
-        publishedUrl: data.publishedUrl || null,
-        createdBy: actor.id,
-      });
+    await tx.insert(s.publishingRecords).values({
+      id: id(),
+      platformVariantId: variantId,
+      versionId: data.expectedVersionId,
+      status: data.status,
+      scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+      publishedAt: data.publishedAt ? new Date(data.publishedAt) : null,
+      publishedUrl: data.publishedUrl || null,
+      createdBy: actor.id,
+    });
     await tx
       .update(s.platformVariants)
       .set({ publishingStatus: data.status, updatedAt: new Date() })

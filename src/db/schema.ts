@@ -14,6 +14,14 @@ export const platforms = pgEnum("platform", [
   "INSTAGRAM",
   "FACEBOOK",
   "LINKEDIN",
+  "YOUTUBE",
+  "TIKTOK",
+]);
+export const contentFormats = pgEnum("content_format", [
+  "IMAGE_POST",
+  "CAROUSEL",
+  "SHORT_VIDEO",
+  "LONG_VIDEO",
 ]);
 export const reviewStates = pgEnum("review_status", [
   "DRAFT",
@@ -102,6 +110,9 @@ export const platformVariants = pgTable(
       .notNull()
       .references(() => contentItems.id),
     platform: platforms("platform").notNull(),
+    contentFormat: contentFormats("content_format")
+      .notNull()
+      .default("IMAGE_POST"),
     plannedPublishAt: timestamp("planned_publish_at", {
       withTimezone: true,
     }).notNull(),
@@ -114,7 +125,11 @@ export const platformVariants = pgTable(
     updatedAt: updated(),
   },
   (t) => [
-    uniqueIndex("one_platform_per_content").on(t.contentItemId, t.platform),
+    uniqueIndex("one_platform_format_per_content").on(
+      t.contentItemId,
+      t.platform,
+      t.contentFormat,
+    ),
   ],
 );
 export const mediaAssets = pgTable("media_assets", {
@@ -125,6 +140,7 @@ export const mediaAssets = pgTable("media_assets", {
   originalFilename: text("original_filename").notNull(),
   width: integer("width").notNull(),
   height: integer("height").notNull(),
+  durationMs: integer("duration_ms").notNull().default(0),
   bytes: integer("bytes").notNull(),
   altText: text("alt_text").notNull(),
   storage: text("storage").notNull().default("cloudinary"),
@@ -134,7 +150,16 @@ export const mediaAssets = pgTable("media_assets", {
     .references(() => user.id),
   createdAt: created(),
 });
-export type MediaSnapshot = { id: string; altText: string; sortOrder: number };
+export type MediaSnapshot = {
+  id: string;
+  altText: string;
+  sortOrder: number;
+  resourceType: "image" | "video";
+  mimeType: string;
+  width: number;
+  height: number;
+  durationMs: number;
+};
 export const versions = pgTable(
   "platform_variant_versions",
   {
@@ -144,9 +169,15 @@ export const versions = pgTable(
       .references(() => platformVariants.id),
     versionNumber: integer("version_number").notNull(),
     caption: text("caption_snapshot").notNull(),
+    headline: text("headline_snapshot").notNull().default(""),
+    script: text("script_snapshot").notNull().default(""),
+    chapters: text("chapters_snapshot").notNull().default(""),
+    tags: text("tags_snapshot").notNull().default(""),
     ctaText: text("cta_text_snapshot").notNull(),
     ctaUrl: text("cta_url_snapshot").notNull(),
     media: jsonb("media_snapshot").$type<MediaSnapshot[]>().notNull(),
+    video: jsonb("video_snapshot").$type<MediaSnapshot | null>(),
+    thumbnail: jsonb("thumbnail_snapshot").$type<MediaSnapshot | null>(),
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id),

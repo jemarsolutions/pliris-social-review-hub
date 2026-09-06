@@ -1,5 +1,11 @@
 import { z } from "zod";
-export const platformSchema = z.enum(["INSTAGRAM", "FACEBOOK", "LINKEDIN"]);
+import {
+  contentFormatValues,
+  isPlatformFormatAllowed,
+  platformValues,
+} from "./platform-config";
+export const platformSchema = z.enum(platformValues);
+export const contentFormatSchema = z.enum(contentFormatValues);
 export const dateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -22,13 +28,20 @@ export const contentSchema = z
     internalReference: z.string().trim().min(1).max(100),
   })
   .strict();
+const snapshotFields = {
+  caption: z.string().trim().min(1).max(10000),
+  headline: z.string().trim().max(200).default(""),
+  script: z.string().trim().max(60000).default(""),
+  chapters: z.string().trim().max(10000).default(""),
+  tags: z.string().trim().max(2000).default(""),
+  ctaText: z.string().trim().max(300).default(""),
+  ctaUrl: urlSchema.default(""),
+  mediaIds: z.array(z.string().min(1)).max(20).default([]),
+  videoId: z.string().min(1).nullable().default(null),
+  thumbnailId: z.string().min(1).nullable().default(null),
+};
 export const snapshotSchema = z
-  .object({
-    caption: z.string().trim().min(1).max(10000),
-    ctaText: z.string().trim().max(300).default(""),
-    ctaUrl: urlSchema.default(""),
-    mediaIds: z.array(z.string().min(1)).max(20).default([]),
-  })
+  .object(snapshotFields)
   .strict()
   .refine(
     (x) => new Set(x.mediaIds).size === x.mediaIds.length,
@@ -37,12 +50,21 @@ export const snapshotSchema = z
 export const variantSchema = z
   .object({
     platform: platformSchema,
+    contentFormat: contentFormatSchema.default("IMAGE_POST"),
     plannedPublishAt: z.iso.datetime(),
-    ...snapshotSchema.shape,
+    ...snapshotFields,
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!isPlatformFormatAllowed(value.platform, value.contentFormat))
+      ctx.addIssue({
+        code: "custom",
+        path: ["contentFormat"],
+        message: "That format is not available for this platform.",
+      });
+  });
 export const editSchema = z
-  .object({ ...snapshotSchema.shape, expectedVersionId: z.string().min(1) })
+  .object({ ...snapshotFields, expectedVersionId: z.string().min(1) })
   .strict();
 export const decisionSchema = z
   .object({

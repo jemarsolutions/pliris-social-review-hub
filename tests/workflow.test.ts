@@ -142,7 +142,9 @@ describe("Required three-platform workflow through authenticated API", () => {
     }
     const queue = await call("review-queue", "GET", undefined, johnCookie);
     expect(queue.data).toHaveLength(3);
-    expect(queue.data.map((v: { plannedPublishAt: string }) => v.plannedPublishAt)).toEqual(
+    expect(
+      queue.data.map((v: { plannedPublishAt: string }) => v.plannedPublishAt),
+    ).toEqual(
       [...queue.data]
         .sort(
           (a: { plannedPublishAt: string }, b: { plannedPublishAt: string }) =>
@@ -556,6 +558,155 @@ describe("Integrity and authorization", () => {
       }),
     );
     expect(r.status).toBeGreaterThanOrEqual(400);
+  });
+  it("Supports independently approved YouTube and TikTok video adaptations", async () => {
+    const sign = await call("media/sign-upload", "POST", {
+      filename: "podcast-review.mp4",
+      mimeType: "video/mp4",
+      bytes: 16,
+    });
+    expect(sign.status).toBe(201);
+    expect(sign.data.mode).toBe("local");
+
+    const videoForm = new FormData();
+    videoForm.set(
+      "file",
+      new File(
+        [Buffer.from([0, 0, 0, 20, 102, 116, 121, 112, 105, 115, 111, 109])],
+        "podcast-review.mp4",
+        { type: "video/mp4" },
+      ),
+    );
+    videoForm.set(
+      "altText",
+      "Final landscape podcast review cut with two speakers",
+    );
+    const uploaded = await call("media", "POST", videoForm);
+    expect(uploaded.status).toBe(201);
+    expect(uploaded.data.resourceType).toBe("video");
+
+    const youtube = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "YOUTUBE",
+        contentFormat: "LONG_VIDEO",
+        plannedPublishAt: new Date(Date.now() + 2 * 86400000).toISOString(),
+        headline: "Build Better Homes: Planning Before You Build",
+        caption: "Final YouTube episode description.",
+        script: "Final transcript for the completed episode.",
+        chapters: "00:00 Introduction\n02:10 Planning discussion",
+        tags: "home planning, residential design",
+        ctaText: "Explore PLIRIS",
+        ctaUrl: "https://plirisco.com",
+        mediaIds: [],
+        videoId: uploaded.data.id,
+        thumbnailId: state.media[0],
+      },
+    );
+    expect(youtube.status).toBe(201);
+    expect(youtube.data.contentFormat).toBe("LONG_VIDEO");
+    expect(
+      (
+        await call(
+          `platform-variants/${youtube.data.id}/submit-review`,
+          "POST",
+          { expectedVersionId: youtube.data.currentVersionId },
+        )
+      ).status,
+    ).toBe(201);
+
+    const tiktok = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "TIKTOK",
+        contentFormat: "SHORT_VIDEO",
+        plannedPublishAt: new Date(Date.now() + 2 * 86400000).toISOString(),
+        caption: "The first planning question every homeowner should ask.",
+        tags: "#HomeDesign #BuildBetterHomes",
+        videoId: uploaded.data.id,
+      },
+    );
+    expect(tiktok.status).toBe(201);
+    expect(
+      (
+        await call(
+          `platform-variants/${tiktok.data.id}/submit-review`,
+          "POST",
+          { expectedVersionId: tiktok.data.currentVersionId },
+        )
+      ).status,
+    ).toBe(201);
+
+    for (const variant of [youtube.data, tiktok.data])
+      expect(
+        (
+          await call(
+            `platform-variants/${variant.id}/approve`,
+            "POST",
+            { expectedVersionId: variant.currentVersionId },
+            johnCookie,
+          )
+        ).status,
+      ).toBe(201);
+
+    const revised = await call(
+      `platform-variants/${youtube.data.id}`,
+      "PATCH",
+      {
+        expectedVersionId: youtube.data.currentVersionId,
+        headline: "Build Better Homes: Plan Before You Build",
+        caption: "Final YouTube episode description.",
+        script: "Final corrected transcript for the completed episode.",
+        chapters: "00:00 Introduction\n02:10 Planning discussion",
+        tags: "home planning, residential design",
+        ctaText: "Explore PLIRIS",
+        ctaUrl: "https://plirisco.com",
+        mediaIds: [],
+        videoId: uploaded.data.id,
+        thumbnailId: state.media[0],
+      },
+    );
+    expect(revised.status).toBe(200);
+    expect(revised.data.reviewStatus).toBe("READY_FOR_REVIEW");
+    const items = await call("content");
+    const currentTikTok = items.data[0].variants.find(
+      (variant: { id: string }) => variant.id === tiktok.data.id,
+    );
+    expect(currentTikTok.reviewStatus).toBe("APPROVED");
+    expect(
+      (await call(`platform-variants/${youtube.data.id}/history`)).data
+        .versions,
+    ).toHaveLength(2);
+
+    const invalid = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "YOUTUBE",
+        contentFormat: "IMAGE_POST",
+        plannedPublishAt: new Date().toISOString(),
+        caption: "Invalid combination",
+        mediaIds: [state.media[0]],
+      },
+    );
+    expect(invalid.status).toBe(422);
+
+    const mixedMedia = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "YOUTUBE",
+        contentFormat: "SHORT_VIDEO",
+        plannedPublishAt: new Date().toISOString(),
+        headline: "Invalid mixed-media short",
+        caption: "A video adaptation cannot contain hidden carousel media.",
+        mediaIds: [state.media[0]],
+        videoId: uploaded.data.id,
+      },
+    );
+    expect(mixedMedia.status).toBe(422);
   });
   it("Producer can archive content while reviewer cannot delete it", async () => {
     const forbidden = await call(

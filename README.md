@@ -1,6 +1,6 @@
 # PLIRIS Social Review Hub
 
-A private, personal prototype owned by Mac/Jemar. Producers prepare social content; reviewers approve an exact Instagram, Facebook or LinkedIn version. No social network is connected, and approval never schedules or publishes content.
+A private, personal prototype owned by Mac/Jemar. Producers prepare social and podcast content; reviewers approve an exact Instagram, Facebook, LinkedIn, YouTube or TikTok version. No social network is connected, and approval never schedules or publishes content.
 
 This is not an official PLIRIS operational system. No Trello, WCS, HubSpot, HQ workflow or priority register is modified. All supplied artwork and seed copy are generic samples.
 
@@ -11,11 +11,11 @@ Next.js App Router, strict TypeScript, Tailwind CSS, shadcn/ui-style Radix compo
 The authenticated interface calls `/api/v1/`. Route handlers authenticate and validate requests, then call the same transactional domain services exercised by integration tests. Producers never write directly to database tables from the browser.
 
 - Content items contain the overall idea and operational metadata.
-- Platform variants belong to one item, unique per platform.
-- Immutable versions snapshot caption, CTA, destination and ordered image references with alt text.
+- Platform adaptations belong to one item and are unique per platform and format. Supported formats are image post, carousel, short video and long video, with platform-appropriate choices.
+- Immutable versions snapshot the final caption/description, title, script/transcript, chapters, tags, CTA, destination, images, video and thumbnail.
 - Decisions reference the exact version and reviewer. There is one final decision per version.
 - Comments, audit events and manual publishing records preserve their version context.
-- Media metadata lives in PostgreSQL. Production images are authenticated Cloudinary assets.
+- Media metadata lives in PostgreSQL. Production images and videos are authenticated Cloudinary assets.
 
 Drizzle schema: `src/db/schema.ts`. Migrations include relational constraints, review-queue indexes and triggers preventing edits/deletes to historical records. The production driver uses Neon WebSockets for interactive transactions and row locks. Local development uses explicitly enabled PGlite (embedded PostgreSQL) with the **same schema and services**, not SQLite or an in-memory mock. It is not used on Vercel.
 
@@ -38,7 +38,7 @@ Open `http://localhost:3000`. Setup creates a local database, applies the checke
 
 Setup refuses to overwrite an existing `.env`. To use an existing configuration, run `npm run db:migrate` and `npm run db:seed`. Seed data is idempotent by internal reference; it does not overwrite existing items or rotate passwords. The seed week is the next Monday–Friday. It includes ready-for-review, approved, changes-requested, rejected and manually recorded published examples, plus a three-slide carousel. All publication records are clearly sample records and do not correspond to real posts.
 
-The local upload fallback saves images in `.local/media`, delivers them through the protected media route, and is disabled when `DATABASE_URL` exists or on Vercel. Back up `.local` only for local demo continuity; do not deploy it. Only one local process should open the same PGlite directory at a time.
+The local upload fallback saves small images and videos in `.local/media`, delivers them through the protected media route, and is disabled when `DATABASE_URL` exists or on Vercel. Back up `.local` only for local demo continuity; do not deploy it. Only one local process should open the same PGlite directory at a time.
 
 ## Production configuration
 
@@ -88,24 +88,24 @@ Roles must be ADMIN, PRODUCER or REVIEWER. Existing email addresses are preserve
 
 1. Create/select a Cloudinary environment with an available free plan. Do not upgrade or enable billable add-ons.
 2. Configure the three Cloudinary environment variables on the server.
-3. The application uploads images server-side using `type: authenticated`, random immutable public IDs, `overwrite: false`, and the original file. No unsigned browser upload preset is needed.
-4. Image metadata and versioned references are persisted in PostgreSQL. Image binaries are never stored in Neon.
-5. `/api/media/[id]` authenticates the request, obtains a signed transformed Cloudinary URL on the server and streams the image. Cloudinary URLs are not exposed as application links. Responses use `private, no-store`.
-6. Original assets remain untouched. Thumbnail and full preview transformations use width limits and automatic format/quality. Confirm authenticated transformations are enabled for your Cloudinary environment before the live acceptance test.
+3. Images upload server-side. Videos obtain a short-lived, server-signed upload request and upload directly from the browser to Cloudinary in 20 MB chunks, avoiding Vercel request-size limits. No unsigned upload preset is needed and the API secret never reaches the browser.
+4. Uploads use `type: authenticated`, random immutable public IDs and `overwrite: false`. Media metadata and versioned references are persisted in PostgreSQL; binaries are never stored in Neon.
+5. `/api/media/[id]` authenticates delivery. Images are streamed through the protected route; videos redirect to an authenticated signed Cloudinary delivery URL after authorization. Responses use `private, no-store`.
+6. Original assets remain untouched. Thumbnail, poster and preview transformations use bounded dimensions and automatic format/quality. Confirm authenticated transformations are enabled for your Cloudinary environment before the live acceptance test.
 
-JPEG, PNG and WebP uploads are limited to 3 MB per image and 20 images per variant. The size limit leaves room for multipart overhead under common serverless request limits. SVG and arbitrary URLs are not accepted for upload. Requests require a producer identity and alt text. Local demo dimensions currently use zero; production metadata uses Cloudinary's actual dimensions.
+JPEG, PNG and WebP uploads are limited to 3 MB per image and 20 images per adaptation. MP4, MOV and WebM review videos are limited to 1 GB in production. The local fallback intentionally accepts only files under 3 MB. SVG and arbitrary URLs are not accepted. Uploads require a producer identity and descriptive text. Cloudinary supplies production dimensions and video duration.
 
 ## Review workflow
 
 1. Sign in as Mac and open Content studio → Create content.
-2. Add a platform adaptation, caption, CTA, destination and images. Move images left/right to set carousel order.
+2. Add a platform adaptation and select a supported format. For image posts/carousels, add images and set carousel order. For video, upload a portrait or landscape review copy, optional/required thumbnail, final description, script/transcript, and YouTube metadata where applicable.
 3. Save the draft, open it and select Submit for review.
 4. Sign in as John. The review queue lists only current versions needing review, ordered by planned time.
 5. Inspect the full caption, carousel, destination, planned date and version. Approve, or provide required feedback for revision/rejection.
 6. Mac opens Revisions and edits the variant. A substantive change creates a new immutable version. A reviewed adaptation returns to Ready for review; it never inherits approval. Previous feedback stays with the previous version.
 7. Re-approve the new version. Other platforms remain untouched.
 
-Changing caption, CTA, URL, image selection or carousel order creates a version. A no-op save does not. Draft edits also create immutable versions but remain draft until submission. Planned posting time, content title, campaign, concept summary and reference are operational metadata and do not change the approved payload. The approved rendered payload is defined as caption, CTA, URL and ordered media/alt text; those are reconstructable historically.
+Changing any approved payload field—including caption, title, script, chapters, tags, CTA, URL, image order, video or thumbnail—creates a version. A no-op save does not. Draft edits also create immutable versions but remain draft until submission. Planned posting time, content title, campaign, concept summary and reference are operational metadata and do not change the approved payload. Every reviewed asset and field is reconstructable historically.
 
 Approval and publishing states are separate. Manual scheduling/publication records require current approval and an explicit producer action. Editing approved content resets the current publishing state to Unscheduled, while the prior publishing record stays in history. Published content is not edited on a social network by this app.
 
@@ -113,7 +113,7 @@ The coverage window is rolling **168 hours**, including now and excluding the ex
 
 ## Security and integrity
 
-- Authenticated page, API and image routes; no public signup or default production password.
+- Authenticated page, API and media routes; no public signup or default production password.
 - Database session lookup and server-side role enforcement; no client-side role trust.
 - Same-origin checks for session-authenticated API mutations and Better Auth's origin protection on sign-in endpoints.
 - Integration bearer keys use constant-time comparison. The key grants producer capability only and cannot approve. Rotate/remove the environment key to revoke access; use a dedicated producer account for a clear audit identity.
@@ -133,19 +133,21 @@ npm test
 npm run build
 ```
 
-Tests use isolated embedded PostgreSQL and the **real migrations, Better Auth handlers and API handlers**. They create/login the producer and reviewer, upload fixtures, create/submit three platforms, approve Facebook/LinkedIn, request Instagram changes, reorder its carousel, preserve version-1 feedback, approve version 2 and verify calendar/coverage/publishing state. They also exercise stale requests, missing reasons, rejected content, unauthorized roles, cross-origin writes, protected media, historical comments, database mutation guards and disabled signup.
+Tests use isolated embedded PostgreSQL and the **real migrations, Better Auth handlers and API handlers**. They cover the original Instagram/Facebook/LinkedIn workflow plus YouTube long-form and TikTok short-form video. The video scenario verifies upload authorization, thumbnails, exact scripts and titles, independent approval, revision history and invalid platform/format rejection. The suite also exercises stale requests, missing reasons, unauthorized roles, cross-origin writes, protected media, historical comments, database mutation guards and disabled signup.
 
 See `docs/VERIFICATION.md` for the actual run results and outstanding live-provider/browser checks. Passing local API integration tests does not claim a live Neon/Cloudinary/Vercel test passed.
 
 ## GitHub and Vercel
 
-Target private repository: `pliris-social-review-hub`. Keep `main` deployable; use feature branches for changes after initial adoption. Commit the lockfile, migrations and tests, never `.env` or `.local`. No GitHub Actions workflow is enabled automatically, avoiding unintended minutes consumption; run the verification commands locally or add a budget-controlled workflow later.
+Repository: `pliris-social-review-hub`. Keep `main` deployable; use feature branches for changes after initial adoption. Commit the lockfile, migrations and tests, never `.env` or `.local`. No GitHub Actions workflow is enabled automatically, avoiding unintended minutes consumption; run the verification commands locally or add a budget-controlled workflow later. If the repository is temporarily public for collaboration, return it to private after the branch is available.
 
 1. Push the reviewed source to a **private** GitHub repository.
 2. Import it in Vercel as a Next.js project; use Node.js 22+ and the default build/output settings. `vercel.json` explicitly selects Next.js and the build command.
 3. Configure Neon, auth and Cloudinary environment variables. Ensure `NEXT_PUBLIC_APP_URL` exactly matches the stable HTTPS deployment URL. Omit `LOCAL_DEMO` or set `0`.
 4. Apply migrations and provision accounts from a trusted local environment before first sign-in.
 5. Deploy and complete the live-provider acceptance test in `docs/VERIFICATION.md`.
+
+For an existing deployment, run `npm run db:migrate` against its Neon database before promoting this video-capability branch. The migration preserves old approvals, identifies existing multi-image variants as carousels and enriches their historical image snapshots.
 
 No paid plan has been enabled or requested. This is a personal prototype. If PLIRIS formally adopts it, reassess Vercel's then-current commercial-use/plan requirements and all provider quotas before production use. No guarantee is made about future free-tier availability.
 

@@ -87,6 +87,7 @@ for (let n = 0; n < 5; n++) {
     date.setUTCHours(16 + index, 0, 0, 0);
     const v = await service.createVariant(a, item.id, {
       platform,
+      contentFormat: media.length > 1 ? "CAROUSEL" : "IMAGE_POST",
       plannedPublishAt: date.toISOString(),
       caption: `${topics[n][0]}.\n\n${topics[n][1]}\n\n${platform === "INSTAGRAM" ? "Save this idea for your next home planning conversation. #HomeDesign #ThoughtfulPlanning" : platform === "FACEBOOK" ? "What matters most in a home that works for your family? Share your thoughts." : "A considered design brief helps teams make better decisions. What questions do you ask at the start of a project?"}\n\nSample content for prototype testing.`,
       ctaText: "Explore the idea",

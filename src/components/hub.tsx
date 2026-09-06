@@ -18,7 +18,10 @@ import {
   Camera,
   MessageSquare,
   BriefcaseBusiness,
+  Music2,
+  Video,
 } from "lucide-react";
+import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -55,7 +58,11 @@ export function Platform({ value }: { value: string }) {
       ? Camera
       : value === "FACEBOOK"
         ? MessageSquare
-        : BriefcaseBusiness;
+        : value === "LINKEDIN"
+          ? BriefcaseBusiness
+          : value === "YOUTUBE"
+            ? Video
+            : Music2;
   return (
     <span className={`platform platform-${value.toLowerCase()}`}>
       <Icon size={15} />
@@ -113,7 +120,7 @@ export function Hub({
       (platform === "ALL" || v.platform === platform) &&
       (!date || v.plannedPublishAt.slice(0, 10) === date) &&
       (!query ||
-        `${item.title} ${v.version.caption}`
+        `${item.title} ${v.version.headline || ""} ${v.version.caption}`
           .toLowerCase()
           .includes(query.toLowerCase())),
   );
@@ -361,7 +368,7 @@ export function Hub({
                 onChange={(e) => setPlatform(e.target.value)}
               >
                 <option value="ALL">All platforms</option>
-                {["INSTAGRAM", "FACEBOOK", "LINKEDIN"].map((p) => (
+                {platformValues.map((p) => (
                   <option key={p}>{p}</option>
                 ))}
               </select>
@@ -452,6 +459,9 @@ export function Hub({
                             onClick={() => open(item, v)}
                           >
                             <Platform value={v.platform} />
+                            <span className="format-badge">
+                              {label(v.contentFormat)}
+                            </span>
                             <Status value={v.reviewStatus} />
                           </Button>
                         ))}
@@ -463,7 +473,7 @@ export function Hub({
                         onClick={() => setEditing({ item })}
                       >
                         <Plus size={16} />
-                        Add platform
+                        Add adaptation
                       </Button>
                       <Button
                         variant="outline"
@@ -505,19 +515,24 @@ export function Hub({
                     onClick={() => open(item, v)}
                   >
                     <div className="card-media">
-                      {v.version.media[0] ? (
+                      {v.version.thumbnail || v.version.media[0] ? (
                         <img
-                          src={`/api/media/${v.version.media[0].id}?thumb=1`}
-                          alt={v.version.media[0].altText}
+                          src={`/api/media/${(v.version.thumbnail || v.version.media[0]).id}?thumb=1`}
+                          alt={
+                            (v.version.thumbnail || v.version.media[0]).altText
+                          }
                           loading="lazy"
                         />
+                      ) : v.version.video ? (
+                        <span className="video-placeholder">
+                          <Video size={34} />
+                          Video ready
+                        </span>
                       ) : (
                         <span>No media yet</span>
                       )}
                       <span className="media-count">
-                        {v.version.media.length > 1
-                          ? `${v.version.media.length} slides`
-                          : "Single image"}
+                        {label(v.contentFormat)}
                       </span>
                     </div>
                     <div className="card-content">

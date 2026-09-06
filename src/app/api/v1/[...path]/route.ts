@@ -1,7 +1,7 @@
 import { authenticate, apiError } from "@/lib/api-auth";
 import { AppError, coverage } from "@/lib/domain";
 import * as service from "@/lib/service";
-import { uploadMedia } from "@/lib/media";
+import { completeVideoUpload, signVideoUpload, uploadMedia } from "@/lib/media";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ path: string[] }> };
@@ -74,7 +74,15 @@ async function route(req: Request, ctx: Context) {
       const text = await req.text();
       if (text.length > 100000) throw new AppError(413, "Request too large.");
       const input = JSON.parse(text || "{}");
-      if (p[0] === "content" && p.length === 1 && method === "POST")
+      if (p[0] === "media" && p[1] === "sign-upload" && method === "POST")
+        data = signVideoUpload(actor, input);
+      else if (
+        p[0] === "media" &&
+        p[1] === "complete-video" &&
+        method === "POST"
+      )
+        data = await completeVideoUpload(actor, input);
+      else if (p[0] === "content" && p.length === 1 && method === "POST")
         data = await service.createContent(actor, input);
       else if (p[0] === "content" && p.length === 2 && method === "PATCH")
         data = await service.updateContent(actor, p[1], input);
