@@ -1,15 +1,14 @@
 "use client";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 export default function Login() {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   return (
     <main className="login">
       <section className="login-story">
-        <div className="wordmark">
-          PLIRIS <span>SOCIAL REVIEW HUB</span>
-        </div>
+        <BrandMark />
         <div>
           <p className="eyebrow">A CLEARER WAY TO REVIEW</p>
           <h1>

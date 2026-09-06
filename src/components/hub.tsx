@@ -31,6 +31,7 @@ import {
 } from "./ui/dialog";
 import { api, type HubData, type Item, type Variant } from "./types";
 import { Review } from "./review";
+import { BrandMark } from "./brand-mark";
 import { Editor } from "./producer";
 const nav = [
   ["Dashboard", LayoutDashboard],
@@ -148,9 +149,7 @@ export function Hub({
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="wordmark">
-          PLIRIS<span>SOCIAL REVIEW HUB</span>
-        </div>
+        <BrandMark />
         <div className="workspace-label">CONTENT WORKSPACE</div>
         <nav aria-label="Main navigation">
           {nav.map(([name, Icon]) => (

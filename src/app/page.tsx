@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth";
 import { dashboard } from "@/lib/service";
 import { Hub } from "@/components/hub";
+import { BrandMark } from "@/components/brand-mark";
 import type { HubData } from "@/components/types";
 export const dynamic = "force-dynamic";
 export default async function Home() {
@@ -12,9 +13,7 @@ export default async function Home() {
   )
     return (
       <main className="setup">
-        <div className="wordmark">
-          PLIRIS <span>REVIEW HUB</span>
-        </div>
+        <BrandMark />
         <h1>Ready to connect.</h1>
         <p>
           Run the local demo setup or configure your database and authentication

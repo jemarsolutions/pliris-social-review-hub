@@ -2,7 +2,9 @@
 :root {
   --background: #f4f6fa;
   --foreground: #192533;
-  --primary: #1a5260;
+  --brand-navy: #0b4772;
+  --brand-green: #86c63b;
+  --primary: #155b83;
   --primary-foreground: #fff;
   --muted: #637082;
   --border: #dfe5ec;
@@ -219,6 +221,53 @@ blockquote {
   font-weight: 500;
   margin-top: 7px;
 }
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand-navy);
+}
+.brand-symbol {
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+.brand-symbol svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--brand-green);
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 5;
+}
+.brand-symbol-home {
+  stroke: var(--brand-navy);
+}
+.brand-symbol-accent,
+.brand-symbol-dot {
+  fill: var(--brand-green);
+  stroke: none;
+}
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.brand-copy strong {
+  color: var(--brand-navy);
+  font-size: 1.65rem;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+}
+.brand-copy small {
+  color: var(--brand-navy);
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  margin-top: 6px;
+}
 .app-shell {
   display: flex;
   min-height: 100vh;
@@ -237,6 +286,17 @@ blockquote {
 .sidebar .wordmark {
   padding-left: 13px;
   margin-bottom: 47px;
+}
+.sidebar .brand-mark {
+  padding-left: 13px;
+  margin-bottom: 47px;
+}
+.sidebar .brand-copy strong,
+.sidebar .brand-copy small {
+  color: #fff;
+}
+.sidebar .brand-symbol-home {
+  stroke: #fff;
 }
 .workspace-label {
   font-size: 0.75rem;
@@ -1385,6 +1445,21 @@ blockquote {
     font-size: 0.75rem;
     margin-left: 14px;
   }
+  .sidebar .brand-mark {
+    padding-left: 0;
+    margin-bottom: 18px;
+  }
+  .sidebar .brand-symbol {
+    width: 32px;
+    height: 32px;
+  }
+  .sidebar .brand-copy strong {
+    font-size: 1.2rem;
+  }
+  .sidebar .brand-copy small {
+    font-size: 0.5rem;
+    margin-top: 4px;
+  }
   .workspace-label,
   .sidebar-bottom {
     display: none;
@@ -1532,7 +1607,11 @@ blockquote {
     font-size: 2.4rem;
     margin-top: 25px;
   }
-  .login-story .wordmark {
+  .login-story .brand-symbol {
+    width: 34px;
+    height: 34px;
+  }
+  .login-story .brand-copy strong {
     font-size: 1.4rem;
   }
   .login-story small,
@@ -1632,7 +1711,7 @@ blockquote {
   .section-heading {
     flex-direction: column;
   }
-  .login-story .wordmark span {
+  .login-story .brand-copy small {
     font-size: 0.75rem;
   }
 }
