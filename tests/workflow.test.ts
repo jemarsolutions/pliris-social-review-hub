@@ -16,6 +16,8 @@ const { getDb } = await import("../src/db/index");
 const s = await import("../src/db/schema");
 const { createUser } = await import("../scripts/create-user");
 const { getAuth } = await import("../src/lib/auth");
+const { getAppBaseUrl, getTrustedAppOrigins, isTrustedAppOrigin } =
+  await import("../src/lib/app-origin");
 const routes = await import("../src/app/api/v1/[...path]/route");
 const mediaRoute = await import("../src/app/api/media/[id]/route");
 let adminCookie = "",
@@ -252,6 +254,27 @@ describe("Required three-platform workflow through authenticated API", () => {
   });
 });
 describe("Integrity and authorization", () => {
+  it("Trusts the active Vercel preview and branch origins", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.VERCEL_BRANCH_URL =
+      "plirissocialhub-git-feature-podcast.example.vercel.app";
+    process.env.VERCEL_URL = "plirissocialhub-deployment.example.vercel.app";
+    expect(getAppBaseUrl()).toBe(
+      "https://plirissocialhub-git-feature-podcast.example.vercel.app",
+    );
+    expect(getTrustedAppOrigins()).toContain(
+      "https://plirissocialhub-deployment.example.vercel.app",
+    );
+    expect(
+      isTrustedAppOrigin(
+        "https://plirissocialhub-git-feature-podcast.example.vercel.app",
+      ),
+    ).toBe(true);
+    expect(isTrustedAppOrigin("https://attacker.example")).toBe(false);
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_BRANCH_URL;
+    delete process.env.VERCEL_URL;
+  });
   it("Editing approved content invalidates approval without deleting the approved version", async () => {
     const previous = state.versions.INSTAGRAM;
     const result = await call(

@@ -4,6 +4,7 @@ import { getAuth } from "./auth";
 import { getDb } from "@/db";
 import { user } from "@/db/schema";
 import { AppError, type Actor, type Role } from "./domain";
+import { isTrustedAppOrigin } from "./app-origin";
 export async function authenticate(request: Request): Promise<Actor> {
   const bearer = request.headers.get("authorization");
   if (bearer) {
@@ -28,10 +29,8 @@ export async function authenticate(request: Request): Promise<Actor> {
   if (!session) throw new AppError(401, "Authentication required.");
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
-    const expected = new URL(
-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    ).origin;
-    if (origin !== expected) throw new AppError(403, "Invalid request origin.");
+    if (!isTrustedAppOrigin(origin))
+      throw new AppError(403, "Invalid request origin.");
   }
   return {
     id: session.user.id,
