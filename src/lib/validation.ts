@@ -25,7 +25,7 @@ export const contentSchema = z
     contentDate: dateSchema,
     campaign: z.string().trim().max(200).default(""),
     conceptSummary: z.string().trim().max(4000).default(""),
-    internalReference: z.string().trim().min(1).max(100),
+    internalReference: z.string().trim().min(1).max(100).optional(),
   })
   .strict();
 const snapshotFields = {

@@ -94,12 +94,12 @@ describe("Required three-platform workflow through authenticated API", () => {
   it("Mac creates Monday Educational Content and uploads carousel images", async () => {
     const item = await call("content", "POST", {
       title: "Monday Educational Content",
-      internalReference: "E2E-001",
       contentDate: "2026-09-07",
       campaign: "Test",
       conceptSummary: "Required workflow",
     });
     expect(item.status).toBe(201);
+    expect(item.data.internalReference).toBe("PLIRIS-0001");
     state.itemId = item.data.id;
     for (let i = 1; i <= 2; i++) {
       const form = new FormData();

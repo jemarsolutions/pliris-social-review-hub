@@ -704,11 +704,9 @@ function ContentForm({
         <label>
           Internal reference
           <input
-            name="internalReference"
-            required
-            maxLength={100}
-            placeholder="e.g. DEMO-006"
-            defaultValue={item?.internalReference}
+            name={item ? "internalReference" : undefined}
+            readOnly
+            value={item?.internalReference || "Generated on creation"}
           />
         </label>
         <label>

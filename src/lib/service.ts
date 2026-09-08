@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { getDb, type Transaction } from "@/db";
 import * as s from "@/db/schema";
 import {
@@ -188,9 +188,19 @@ export async function createContent(actor: Actor, input: unknown) {
   requireProducer(actor);
   const data = contentSchema.parse(input);
   return getDb().transaction(async (tx) => {
+    const referenceResult = await tx.execute(
+      sql<{ nextval: string }>`SELECT nextval('content_reference_seq') AS nextval`,
+    );
+    const [{ nextval }] = referenceResult.rows as [{ nextval: string }];
+    const internalReference = `PLIRIS-${String(nextval).padStart(4, "0")}`;
     const [item] = await tx
       .insert(s.contentItems)
-      .values({ id: id(), ...data, createdBy: actor.id })
+      .values({
+        id: id(),
+        ...data,
+        internalReference,
+        createdBy: actor.id,
+      })
       .returning();
     await audit(tx, actor, "CONTENT_CREATED", item.id);
     return item;
@@ -211,9 +221,10 @@ export async function updateContent(
       .for("update");
     if (!item) throw new AppError(404, "Content not found.");
     if (item.archivedAt) throw new AppError(409, "Content is archived.");
+    const { internalReference: _ignoredReference, ...editableData } = data;
     const [updated] = await tx
       .update(s.contentItems)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...editableData, updatedAt: new Date() })
       .where(eq(s.contentItems.id, contentId))
       .returning();
     await audit(tx, actor, "CONTENT_UPDATED", contentId, {

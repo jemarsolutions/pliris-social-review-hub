@@ -40,20 +40,18 @@ const topics = [
   ],
 ];
 for (let n = 0; n < 5; n++) {
-  const ref = `DEMO-${String(n + 1).padStart(3, "0")}`;
   if (
     (
       await getDb()
         .select()
         .from(contentItems)
-        .where(eq(contentItems.internalReference, ref))
+        .where(eq(contentItems.title, topics[n][0]))
     ).length
   )
     continue;
   const date = new Date(monday.getTime() + n * 86400000);
   const item = await service.createContent(a, {
     title: topics[n][0],
-    internalReference: ref,
     contentDate: date.toISOString().slice(0, 10),
     campaign: "Sample · A considered home",
     conceptSummary: topics[n][1],

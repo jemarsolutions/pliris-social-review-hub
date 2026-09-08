@@ -55,12 +55,15 @@ Create content:
 ```json
 {
   "title": "Monday Educational Content",
-  "internalReference": "DEMO-006",
   "contentDate": "2026-09-07",
   "campaign": "Sample",
   "conceptSummary": "A short concept summary"
 }
 ```
+
+The server assigns each content item a unique internal reference in the form
+`PLIRIS-0001`. References increment automatically and cannot be changed during
+an edit.
 
 Create variant:
 
