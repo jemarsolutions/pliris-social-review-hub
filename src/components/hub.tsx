@@ -136,6 +136,17 @@ export function Hub({
             ? v.publishingStatus === "PUBLISHED"
             : true,
   );
+  const reviewGroups = Array.from(
+    visible
+      .filter(() => view === "Review queue")
+      .reduce((groups, entry) => {
+        const key = entry.item.contentDate;
+        const group = groups.get(key) || [];
+        group.push(entry);
+        groups.set(key, group);
+        return groups;
+      }, new Map<string, { item: Item; variant: Variant }[]>()),
+  ).sort(([a], [b]) => a.localeCompare(b));
   const monday = new Date();
   monday.setUTCHours(0, 0, 0, 0);
   monday.setUTCDate(
@@ -226,7 +237,7 @@ export function Hub({
                 {view === "Dashboard"
                   ? `Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${user.name.split(" ")[0]}.`
                   : view === "Review queue"
-                    ? "Needs your review"
+                    ? "Review studio"
                     : view === "Content"
                       ? "Content studio"
                       : view}
@@ -235,7 +246,7 @@ export function Hub({
                 {view === "Dashboard"
                   ? "Your next decisions, all in one place."
                   : view === "Review queue"
-                    ? "Review each platform adaptation and its current version."
+                    ? "Work through each content group and its platform adaptations."
                     : view === "Approved"
                       ? "Approved current versions. Scheduling and publishing are recorded separately."
                       : view === "Revisions"
@@ -315,6 +326,8 @@ export function Hub({
                   ? `${formatDate(days[0].toISOString())} – ${formatDate(days[6].toISOString())}`
                   : view === "Content"
                     ? `${data.items.length} content ideas`
+                    : view === "Review queue"
+                      ? `${reviewGroups.length} content groups`
                     : `${visible.length} platform adaptations`}
             </h2>
             {view === "Dashboard" ? (
@@ -505,50 +518,39 @@ export function Hub({
                 ))}
             </div>
           ) : (
-            <div className="review-grid">
-              {(view === "Dashboard" ? visible.slice(0, 6) : visible).map(
-                ({ item, variant: v }) => (
-                  <button
-                    className="review-card"
-                    key={v.id}
-                    onClick={() => open(item, v)}
-                  >
-                    <div className="card-media">
-                      {v.version.thumbnail || v.version.media[0] ? (
-                        <img
-                          src={`/api/media/${(v.version.thumbnail || v.version.media[0]).id}?thumb=1`}
-                          alt={
-                            (v.version.thumbnail || v.version.media[0]).altText
-                          }
-                          loading="lazy"
-                        />
-                      ) : v.version.video ? (
-                        <span className="video-placeholder">
-                          <Video size={34} />
-                          Video ready
-                        </span>
-                      ) : (
-                        <span>No media yet</span>
-                      )}
-                      <span className="media-count">
-                        {label(v.contentFormat)}
-                      </span>
-                    </div>
-                    <div className="card-content">
-                      <div className="card-meta">
-                        <Platform value={v.platform} />
-                        <small>v{v.version.versionNumber}</small>
+            <div className={view === "Review queue" ? "review-groups" : "review-grid"}>
+              {(view === "Review queue"
+                ? reviewGroups.flatMap(([dateKey, entries]) => [
+                    <section className="review-group" key={dateKey}>
+                      <header className="review-group-heading">
+                        <div>
+                          <p className="eyebrow">CONTENT GROUP</p>
+                          <h3>{formatDate(dateKey, true)}</h3>
+                        </div>
+                        <span>{entries.length} adaptations</span>
+                      </header>
+                      <div className="review-grid">
+                        {entries.map(({ item, variant: v }) => (
+                          <ReviewCard
+                            key={v.id}
+                            item={item}
+                            variant={v}
+                            open={open}
+                          />
+                        ))}
                       </div>
-                      <h3>{item.title}</h3>
-                      <p>{formatDate(v.plannedPublishAt, true)}</p>
-                      <div className="card-footer">
-                        <Status value={v.reviewStatus} />
-                        <ArrowUpRight size={18} />
-                      </div>
-                    </div>
-                  </button>
-                ),
-              )}
+                    </section>,
+                  ])
+                : (view === "Dashboard" ? visible.slice(0, 6) : visible).map(
+                    ({ item, variant: v }) => (
+                      <ReviewCard
+                        key={v.id}
+                        item={item}
+                        variant={v}
+                        open={open}
+                      />
+                    ),
+                  ))}
             </div>
           )}
           {!visible.length && !["Content", "Calendar"].includes(view) && (
@@ -656,6 +658,52 @@ export function Hub({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+function ReviewCard({
+  item,
+  variant: v,
+  open,
+}: {
+  item: Item;
+  variant: Variant;
+  open: (item: Item, variant: Variant) => void;
+}) {
+  return (
+    <button
+      className="review-card"
+      onClick={() => open(item, v)}
+    >
+      <div className="card-media">
+        {v.version.thumbnail || v.version.media[0] ? (
+          <img
+            src={`/api/media/${(v.version.thumbnail || v.version.media[0]).id}?thumb=1`}
+            alt={(v.version.thumbnail || v.version.media[0]).altText}
+            loading="lazy"
+          />
+        ) : v.version.video ? (
+          <span className="video-placeholder">
+            <Video size={34} />
+            Video ready
+          </span>
+        ) : (
+          <span>No media yet</span>
+        )}
+        <span className="media-count">{label(v.contentFormat)}</span>
+      </div>
+      <div className="card-content">
+        <div className="card-meta">
+          <Platform value={v.platform} />
+          <small>v{v.version.versionNumber}</small>
+        </div>
+        <h3>{item.title}</h3>
+        <p>{formatDate(v.plannedPublishAt, true)}</p>
+        <div className="card-footer">
+          <Status value={v.reviewStatus} />
+          <ArrowUpRight size={18} />
+        </div>
+      </div>
+    </button>
   );
 }
 function ContentForm({
