@@ -4,6 +4,11 @@ export const metadata: Metadata = {
   title: "PLIRIS Social Review Hub",
   description: "Private social content review and version-specific approvals.",
   robots: { index: false, follow: false },
+  icons: {
+    icon: "/icon.ico",
+    shortcut: "/icon.ico",
+    apple: "/icon.ico",
+  },
 };
 export default function RootLayout({
   children,
