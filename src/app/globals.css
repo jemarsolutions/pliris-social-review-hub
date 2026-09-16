@@ -905,6 +905,37 @@ blockquote {
   font-size: 0.75rem;
   color: #788493;
 }
+.preview-mode-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  margin: -7px 0 12px;
+  border: 1px solid #cbdde5;
+  border-radius: 7px;
+  background: #f5fafb;
+  color: #245a6b;
+  font-size: 0.74rem;
+}
+.preview-mode-indicator strong {
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+}
+.preview-mode-indicator span {
+  color: #587383;
+  text-align: right;
+}
+.preview-mode-indicator.personal {
+  border-color: #7bb4b2;
+  background: #e5f5f2;
+  color: #145f59;
+  box-shadow: inset 4px 0 #28968b;
+}
+.preview-mode-indicator.personal span {
+  color: #28716e;
+  font-weight: 600;
+}
 .social-preview {
   background: #fff;
   border: 1px solid #dce2e7;
@@ -1181,6 +1212,9 @@ blockquote {
 .personal-preview-panel > p:not(.eyebrow) {
   font-size: 0.85rem;
 }
+.personal-preview-panel > .button {
+  margin-top: 4px;
+}
 .personal-preview-list {
   display: grid;
   gap: 9px;
@@ -1203,6 +1237,7 @@ blockquote {
 .personal-preview-item.selected {
   border-color: #79aeb1;
   background: #e8f4f3;
+  box-shadow: inset 4px 0 #28968b;
 }
 .personal-preview-item small {
   display: block;

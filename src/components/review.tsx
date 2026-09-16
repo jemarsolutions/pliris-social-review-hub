@@ -108,12 +108,26 @@ export function Review({
         <header className="preview-heading">
           <Platform value={previewVariant.platform} />
           <span>
-            {previewVariant.publishingAccount === "PERSONAL"
-              ? `${previewVariant.publishingAccountName} · `
-              : ""}
             {label(previewVariant.contentFormat)} · Platform preview
           </span>
         </header>
+        <div
+          className={`preview-mode-indicator ${
+            previewVariant.publishingAccount === "PERSONAL" ? "personal" : "pliris"
+          }`}
+          role="status"
+        >
+          <strong>
+            {previewVariant.publishingAccount === "PERSONAL"
+              ? "PERSONAL PREVIEW"
+              : "PLIRIS PREVIEW"}
+          </strong>
+          <span>
+            {previewVariant.publishingAccount === "PERSONAL"
+              ? `Viewing ${previewVariant.publishingAccountName}`
+              : "Canonical company post"}
+          </span>
+        </div>
         <div
           className={`social-preview social-${previewVariant.platform.toLowerCase()}`}
         >
@@ -297,6 +311,16 @@ export function Review({
               personal accounts. These mirrors do not require a separate
               approval decision.
             </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewVariant(variant);
+                setSlide(0);
+              }}
+            >
+              <ArrowLeft size={16} />
+              Back to PLIRIS preview
+            </Button>
             <div className="personal-preview-list">
               {personalVariants.map((personal) => (
                 <button
@@ -304,6 +328,7 @@ export function Review({
                     previewVariant.id === personal.id ? "selected" : ""
                   }`}
                   key={personal.id}
+                  aria-pressed={previewVariant.id === personal.id}
                   onClick={() => {
                     setPreviewVariant(personal);
                     setSlide(0);
@@ -312,7 +337,7 @@ export function Review({
                   <div>
                     <strong>{personal.publishingAccountName}</strong>
                     <small>
-                      {label(personal.contentFormat)} · {label(personal.reviewStatus)}
+                      {label(personal.contentFormat)} · Follows PLIRIS
                     </small>
                   </div>
                   <span className="sync-state">Auto-synced</span>
