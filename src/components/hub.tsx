@@ -21,6 +21,7 @@ import {
   Music2,
   Video,
   Send,
+  Clock3,
 } from "lucide-react";
 import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
@@ -42,6 +43,7 @@ const nav = [
   ["Revisions", RotateCcw],
   ["Archive", Archive],
   ["Publishing", Send],
+  ["Scheduled", Clock3],
 ] as const;
 export const label = (v: string) =>
   v
@@ -131,12 +133,15 @@ export function Hub({
     view === "Dashboard" || view === "Review queue"
       ? v.reviewStatus === "READY_FOR_REVIEW"
       : view === "Approved"
-        ? v.reviewStatus === "APPROVED" && v.publishingStatus !== "PUBLISHED"
+        ? v.reviewStatus === "APPROVED" &&
+          !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
         : view === "Revisions"
           ? v.reviewStatus === "CHANGES_REQUESTED"
           : view === "Publishing"
             ? ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus) &&
-              v.publishingStatus !== "PUBLISHED"
+              !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
+          : view === "Scheduled"
+            ? v.publishingStatus === "SCHEDULED"
           : view === "Archive"
             ? v.publishingStatus === "PUBLISHED"
             : true,
@@ -269,6 +274,8 @@ export function Hub({
                           ? "A week of content, with every platform accounted for."
                           : view === "Publishing"
                             ? "Choose the destination account, then review every platform adaptation by publish date."
+                          : view === "Scheduled"
+                            ? "Content already scheduled for an external social account."
                           : view === "Archive"
                             ? "Manually recorded published content."
                             : "Create content ideas and their platform adaptations."}
@@ -346,6 +353,8 @@ export function Hub({
                       ? `${reviewGroups.length} content groups`
                       : view === "Publishing"
                         ? `${visible.length} destination cards`
+                          : view === "Scheduled"
+                            ? `${visible.length} scheduled cards`
                     : `${visible.length} platform adaptations`}
             </h2>
             {view === "Dashboard" ? (
@@ -538,7 +547,9 @@ export function Hub({
           ) : (
             <div
               className={
-                view === "Review queue" || view === "Publishing"
+                view === "Review queue" ||
+                view === "Publishing" ||
+                view === "Scheduled"
                   ? "review-groups"
                   : "review-grid"
               }
@@ -565,7 +576,7 @@ export function Hub({
                       </div>
                     </section>,
                   ])
-                : view === "Publishing"
+                : view === "Publishing" || view === "Scheduled"
                   ? publishingGroups.flatMap(([dateKey, entries]) => [
                       <section className="review-group" key={dateKey}>
                         <header className="review-group-heading">

@@ -447,7 +447,9 @@ export function Review({
                     variant="outline"
                     onClick={() => setPublishing(true)}
                   >
-                    Record scheduling / publication
+                    {variant.publishingStatus === "SCHEDULED"
+                      ? "Record publication"
+                      : "Record scheduling / publication"}
                   </Button>
                 )}
                 {variant.publishingStatus === "PUBLISHED" && (

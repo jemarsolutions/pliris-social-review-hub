@@ -434,6 +434,35 @@ describe("Integrity and authorization", () => {
         )
       ).status,
     ).toBe(409);
+    const scheduled = await call(
+      `platform-variants/${state.ids.FACEBOOK}/publishing`,
+      "POST",
+      {
+        expectedVersionId: state.versions.FACEBOOK,
+        status: "SCHEDULED",
+        scheduledAt: new Date(Date.now() + 86400000).toISOString(),
+      },
+    );
+    expect(scheduled.status).toBe(201);
+    const scheduledContent = await call("content");
+    expect(
+      scheduledContent.data[0].variants.find(
+        (v: { id: string }) => v.id === state.ids.FACEBOOK,
+      ).publishingStatus,
+    ).toBe("SCHEDULED");
+    expect(
+      (
+        await call(
+          `platform-variants/${state.ids.FACEBOOK}/publishing`,
+          "POST",
+          {
+            expectedVersionId: state.versions.FACEBOOK,
+            status: "SCHEDULED",
+            scheduledAt: new Date(Date.now() + 172800000).toISOString(),
+          },
+        )
+      ).status,
+    ).toBe(409);
     const published = await call(
       `platform-variants/${state.ids.FACEBOOK}/publishing`,
       "POST",

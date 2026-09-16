@@ -511,6 +511,11 @@ export async function recordPublishing(
         409,
         "This version is already recorded as published.",
       );
+    if (v.publishingStatus === "SCHEDULED" && data.status === "SCHEDULED")
+      throw new AppError(
+        409,
+        "This version is already recorded as scheduled.",
+      );
     if (data.status !== "UNSCHEDULED" && v.reviewStatus !== "APPROVED")
       throw new AppError(409, "Current version must be approved first.");
     if (data.status === "SCHEDULED" && !data.scheduledAt)
