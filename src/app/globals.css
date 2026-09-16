@@ -744,38 +744,67 @@ blockquote {
 .content-item {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 15px;
-  padding: 24px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  padding: 22px 24px;
+  background: linear-gradient(115deg, #ffffff 0%, #fbfcfd 100%);
+  border: 1px solid #dbe4eb;
+  border-radius: 12px;
   margin-bottom: 15px;
+  box-shadow: 0 5px 18px #17334b08;
 }
 .content-item h3 {
-  margin-bottom: 6px;
+  margin-bottom: 5px;
+  font-size: 1rem;
 }
 .content-adaptations {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 7px;
+  margin-top: 14px;
 }
 .platform-adaptation {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.platform-main,
+.personal-variants {
+  display: inline-flex;
+  align-items: center;
   gap: 7px;
+  flex: 0 0 auto;
 }
 .adaptation-label {
   display: inline-block;
   margin: 0;
   color: #687a8f;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
+  white-space: nowrap;
 }
 .personal-variants {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 27px;
+  padding-left: 9px;
+  border-left: 1px solid #dbe4eb;
+}
+.content-item .button.platform-adaptation-button,
+.content-item .button.personal-adaptation-button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border-color: #d4dfe7;
+  background: #fff;
+  box-shadow: 0 1px 2px #18344c08;
+}
+.content-item .button.personal-adaptation-button {
+  color: #315d6c;
+  background: #f1f7f7;
+  border-color: #cfe1e0;
+}
+.content-item .button.personal-adaptation-button strong {
+  font-size: 0.76rem;
 }
 .content-item p {
   font-size: 0.88rem;
