@@ -125,12 +125,6 @@ describe("Required three-platform workflow through authenticated API", () => {
         {
           platform,
           plannedPublishAt: new Date(Date.now() + 86400000).toISOString(),
-          ...(platform === "FACEBOOK"
-            ? {
-                publishingAccount: "PERSONAL",
-                publishingAccountName: "John · Facebook",
-              }
-            : {}),
           caption: "Original caption for " + platform,
           ctaText: "Explore",
           ctaUrl: "https://example.com",
@@ -138,10 +132,6 @@ describe("Required three-platform workflow through authenticated API", () => {
         },
       );
       expect(v.status).toBe(201);
-      if (platform === "FACEBOOK") {
-        expect(v.data.publishingAccount).toBe("PERSONAL");
-        expect(v.data.publishingAccountName).toBe("John · Facebook");
-      }
       state.ids[platform] = v.data.id;
       state.versions[platform] = v.data.currentVersionId;
       expect(
@@ -152,6 +142,13 @@ describe("Required three-platform workflow through authenticated API", () => {
         ).status,
       ).toBe(201);
     }
+    const grouped = await call("content");
+    expect(grouped.data[0].variants).toHaveLength(9);
+    expect(
+      grouped.data[0].variants.filter(
+        (v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL",
+      ),
+    ).toHaveLength(6);
     const queue = await call("review-queue", "GET", undefined, johnCookie);
     expect(queue.data).toHaveLength(3);
     expect(
@@ -226,18 +223,23 @@ describe("Required three-platform workflow through authenticated API", () => {
         .filter((v: { platform: string }) => v.platform !== "INSTAGRAM")
         .every((v: { reviewStatus: string }) => v.reviewStatus === "APPROVED"),
     ).toBe(true);
+    const approved = await call(
+      `platform-variants/${state.ids.INSTAGRAM}/approve`,
+      "POST",
+      { expectedVersionId: state.versions.INSTAGRAM },
+      johnCookie,
+    );
+    expect(approved.status).toBe(201);
+    const grouped = await call("content");
+    const mirror = grouped.data
+      .find((item: { id: string }) => item.id === state.itemId)
+      .variants.find(
+        (v: { publishingAccountName: string }) =>
+          v.publishingAccountName === "Royal · INSTAGRAM",
+      );
+    expect(mirror.reviewStatus).toBe("APPROVED");
   });
   it("John approves Instagram v2; no scheduling or publishing occurs, calendar and coverage agree", async () => {
-    expect(
-      (
-        await call(
-          `platform-variants/${state.ids.INSTAGRAM}/approve`,
-          "POST",
-          { expectedVersionId: state.versions.INSTAGRAM },
-          johnCookie,
-        )
-      ).status,
-    ).toBe(201);
     const calendar = await call("calendar");
     expect(calendar.data).toHaveLength(3);
     expect(
@@ -796,6 +798,22 @@ describe("Integrity and authorization", () => {
     expect(mixedMedia.status).toBe(422);
   });
   it("Producer can archive content while reviewer cannot delete it", async () => {
+    const john = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "FACEBOOK",
+        contentFormat: "IMAGE_POST",
+        publishingAccount: "PERSONAL",
+        publishingAccountName: "John · Facebook",
+        plannedPublishAt: new Date(Date.now() + 86400000).toISOString(),
+        caption: "John personal-account version of the main content.",
+        ctaText: "Explore",
+        ctaUrl: "https://example.com",
+        mediaIds: [state.media[0]],
+      },
+    );
+    expect(john.status).toBe(201);
     const royal = await call(
       `content/${state.itemId}/platform-variants`,
       "POST",

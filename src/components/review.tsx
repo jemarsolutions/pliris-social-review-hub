@@ -70,6 +70,13 @@ export function Review({
   const media = version.media[slide];
   const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(variant.contentFormat);
   const accountName = variant.publishingAccountName;
+  const personalVariants = item.variants.filter(
+    (candidate) =>
+      variant.publishingAccount === "PLIRIS" &&
+      candidate.publishingAccount === "PERSONAL" &&
+      candidate.platform === variant.platform &&
+      candidate.contentFormat === variant.contentFormat,
+  );
   async function action(path: string, data: unknown) {
     setBusy(true);
     setError("");
@@ -249,7 +256,12 @@ export function Review({
           </span>
         </div>
         <div className="detail-tabs" role="tablist" aria-label="Review details">
-          {["Review", ...(isVideo ? ["Script"] : []), "History"].map((t) => (
+          {[
+            "Review",
+            ...(personalVariants.length ? ["Personal"] : []),
+            ...(isVideo ? ["Script"] : []),
+            "History",
+          ].map((t) => (
             <button
               key={t}
               role="tab"
@@ -263,7 +275,30 @@ export function Review({
             </button>
           ))}
         </div>
-        {tab === "Script" ? (
+        {tab === "Personal" ? (
+          <section className="personal-preview-panel">
+            <p className="eyebrow">PERSONAL SOCIAL MIRRORS</p>
+            <h3>Automatically follows this {label(variant.platform)} post</h3>
+            <p>
+              John and Royal can use the same approved creative on their
+              personal accounts. These mirrors do not require a separate
+              approval decision.
+            </p>
+            <div className="personal-preview-list">
+              {personalVariants.map((personal) => (
+                <div className="personal-preview-item" key={personal.id}>
+                  <div>
+                    <strong>{personal.publishingAccountName}</strong>
+                    <small>
+                      {label(personal.contentFormat)} · {label(personal.reviewStatus)}
+                    </small>
+                  </div>
+                  <span className="sync-state">Auto-synced</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : tab === "Script" ? (
           <section className="script-panel">
             <p className="eyebrow">FINAL PRODUCTION REFERENCE</p>
             <h3>{version.headline || item.title}</h3>
@@ -362,6 +397,7 @@ export function Review({
             )}
             {current &&
               reviewer &&
+              variant.publishingAccount === "PLIRIS" &&
               variant.reviewStatus === "READY_FOR_REVIEW" && (
                 <section className="review-actions">
                   <h3>Your decision</h3>
@@ -462,6 +498,15 @@ export function Review({
                   Editing reviewed content creates a new version and resets its
                   current approval.
                 </small>
+              </section>
+            )}
+            {current && variant.publishingAccount === "PERSONAL" && (
+              <section className="review-actions">
+                <h3>Personal mirror</h3>
+                <p>
+                  This post follows the approved PLIRIS adaptation and does not
+                  require a separate review decision.
+                </p>
               </section>
             )}
             <section className="comment-thread">

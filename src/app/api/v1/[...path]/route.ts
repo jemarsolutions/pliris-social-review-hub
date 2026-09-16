@@ -40,7 +40,8 @@ async function route(req: Request, ctx: Context) {
         if (p[0] === "content") {
           data = p[1] ? items.find((i) => i.id === p[1]) : items;
           if (!data) throw new AppError(404, "Content not found.");
-        } else if (p[0] === "coverage") data = coverage(variants);
+        } else if (p[0] === "coverage")
+          data = coverage(variants.filter((v) => v.publishingAccount === "PLIRIS"));
         else if (p[0] === "calendar") {
           const url = new URL(req.url);
           const start = url.searchParams.get("start"),
@@ -52,12 +53,14 @@ async function route(req: Request, ctx: Context) {
             throw new AppError(422, "Invalid calendar range.");
           data = variants.filter(
             (v) =>
+              v.publishingAccount === "PLIRIS" &&
               (!start || new Date(v.plannedPublishAt) >= new Date(start)) &&
               (!end || new Date(v.plannedPublishAt) < new Date(end)),
           );
         } else
           data = variants.filter(
             (v) =>
+              v.publishingAccount === "PLIRIS" &&
               v.reviewStatus ===
               (p[0] === "review-queue"
                 ? "READY_FOR_REVIEW"

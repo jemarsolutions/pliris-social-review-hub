@@ -285,6 +285,34 @@ export async function createVariant(
       .where(eq(s.platformVariants.id, variantId))
       .returning();
     await audit(tx, actor, "VARIANT_CREATED", variantId);
+    if (data.publishingAccount === "PLIRIS") {
+      for (const accountName of ["John", "Royal"]) {
+        const personalVariantId = id();
+        await tx.insert(s.platformVariants).values({
+          id: personalVariantId,
+          contentItemId: contentId,
+          platform: data.platform,
+          contentFormat: data.contentFormat,
+          plannedPublishAt: new Date(data.plannedPublishAt),
+          publishingAccount: "PERSONAL",
+          publishingAccountName: `${accountName} · ${data.platform}`,
+        });
+        const personalVersionId = await insertVersion(
+          tx,
+          actor,
+          personalVariantId,
+          1,
+          data,
+        );
+        await tx
+          .update(s.platformVariants)
+          .set({ currentVersionId: personalVersionId })
+          .where(eq(s.platformVariants.id, personalVariantId));
+        await audit(tx, actor, "PERSONAL_MIRROR_CREATED", personalVariantId, {
+          sourceVariantId: variantId,
+        });
+      }
+    }
     return variant;
   });
 }
@@ -376,6 +404,45 @@ export async function editVariant(
       versionId,
       schedulingReset: true,
     });
+    if (v.publishingAccount === "PLIRIS") {
+      const personalMirrors = await tx
+        .select()
+        .from(s.platformVariants)
+        .where(
+          and(
+            eq(s.platformVariants.contentItemId, v.contentItemId),
+            eq(s.platformVariants.platform, v.platform),
+            eq(s.platformVariants.contentFormat, v.contentFormat),
+            eq(s.platformVariants.publishingAccount, "PERSONAL"),
+          ),
+        );
+      for (const personal of personalMirrors) {
+        const [personalPrevious] = await tx
+          .select()
+          .from(s.versions)
+          .where(eq(s.versions.id, personal.currentVersionId!));
+        const personalVersionId = await insertVersion(
+          tx,
+          actor,
+          personal.id,
+          personalPrevious.versionNumber + 1,
+          data,
+        );
+        await tx
+          .update(s.platformVariants)
+          .set({
+            currentVersionId: personalVersionId,
+            reviewStatus: "DRAFT",
+            publishingStatus: "UNSCHEDULED",
+            updatedAt: new Date(),
+          })
+          .where(eq(s.platformVariants.id, personal.id));
+        await audit(tx, actor, "PERSONAL_MIRROR_SYNCED", personal.id, {
+          sourceVariantId: variantId,
+          sourceVersionId: versionId,
+        });
+      }
+    }
     return updated;
   });
 }
@@ -455,6 +522,37 @@ export async function decide(
       .set({ reviewStatus: decision, updatedAt: new Date() })
       .where(eq(s.platformVariants.id, variantId))
       .returning();
+    if (decision === "APPROVED" && v.publishingAccount === "PLIRIS") {
+      const personalMirrors = await tx
+        .select()
+        .from(s.platformVariants)
+        .where(
+          and(
+            eq(s.platformVariants.contentItemId, v.contentItemId),
+            eq(s.platformVariants.platform, v.platform),
+            eq(s.platformVariants.contentFormat, v.contentFormat),
+            eq(s.platformVariants.publishingAccount, "PERSONAL"),
+          ),
+        );
+      if (personalMirrors.length) {
+        await tx
+          .update(s.platformVariants)
+          .set({ reviewStatus: "APPROVED", updatedAt: new Date() })
+          .where(
+            and(
+              eq(s.platformVariants.contentItemId, v.contentItemId),
+              eq(s.platformVariants.platform, v.platform),
+              eq(s.platformVariants.contentFormat, v.contentFormat),
+              eq(s.platformVariants.publishingAccount, "PERSONAL"),
+            ),
+          );
+        for (const personal of personalMirrors)
+          await audit(tx, actor, "PERSONAL_MIRROR_AUTO_APPROVED", personal.id, {
+            sourceVariantId: variantId,
+            sourceVersionId: data.expectedVersionId,
+          });
+      }
+    }
     await audit(tx, actor, decision, variantId, {
       versionId: data.expectedVersionId,
       reason: data.reason,
@@ -647,16 +745,17 @@ export async function dashboard() {
       contentDate: i.contentDate,
     })),
   );
+  const canonical = variants.filter((v) => v.publishingAccount === "PLIRIS");
   return {
     items,
-    coverage: coverage(variants),
+    coverage: coverage(canonical),
     counts: {
-      review: variants.filter((v) => v.reviewStatus === "READY_FOR_REVIEW")
+      review: canonical.filter((v) => v.reviewStatus === "READY_FOR_REVIEW")
         .length,
-      revisions: variants.filter((v) => v.reviewStatus === "CHANGES_REQUESTED")
+      revisions: canonical.filter((v) => v.reviewStatus === "CHANGES_REQUESTED")
         .length,
-      approved: variants.filter((v) => v.reviewStatus === "APPROVED").length,
-      upcoming: variants.filter(
+      approved: canonical.filter((v) => v.reviewStatus === "APPROVED").length,
+      upcoming: canonical.filter(
         (v) => new Date(v.plannedPublishAt) >= new Date(),
       ).length,
     },

@@ -131,17 +131,20 @@ export function Hub({
   );
   const visible = filtered.filter(({ variant: v }) =>
     view === "Dashboard" || view === "Review queue"
-      ? v.reviewStatus === "READY_FOR_REVIEW"
+      ? v.publishingAccount === "PLIRIS" && v.reviewStatus === "READY_FOR_REVIEW"
       : view === "Approved"
-        ? v.reviewStatus === "APPROVED" &&
+        ? v.publishingAccount === "PLIRIS" &&
+          v.reviewStatus === "APPROVED" &&
           !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
         : view === "Revisions"
           ? v.reviewStatus === "CHANGES_REQUESTED"
           : view === "Publishing"
-            ? ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus) &&
+            ? v.publishingAccount === "PLIRIS" &&
+              ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus) &&
               !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
           : view === "Scheduled"
-            ? v.publishingStatus === "SCHEDULED"
+            ? v.publishingAccount === "PLIRIS" &&
+              v.publishingStatus === "SCHEDULED"
           : view === "Archive"
             ? v.publishingStatus === "PUBLISHED"
             : true,
