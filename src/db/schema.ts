@@ -116,6 +116,10 @@ export const platformVariants = pgTable(
     plannedPublishAt: timestamp("planned_publish_at", {
       withTimezone: true,
     }).notNull(),
+    publishingAccount: text("publishing_account").notNull().default("PLIRIS"),
+    publishingAccountName: text("publishing_account_name")
+      .notNull()
+      .default("PLIRIS"),
     reviewStatus: reviewStates("review_status").notNull().default("DRAFT"),
     publishingStatus: publishStates("publishing_status")
       .notNull()

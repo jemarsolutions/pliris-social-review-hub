@@ -34,6 +34,8 @@ export type Variant = {
   platform: Platform;
   contentFormat: ContentFormat;
   plannedPublishAt: string;
+  publishingAccount: "PLIRIS" | "PERSONAL";
+  publishingAccountName: string;
   reviewStatus: string;
   publishingStatus: string;
   currentVersionId: string;

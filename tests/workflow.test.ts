@@ -125,6 +125,12 @@ describe("Required three-platform workflow through authenticated API", () => {
         {
           platform,
           plannedPublishAt: new Date(Date.now() + 86400000).toISOString(),
+          ...(platform === "FACEBOOK"
+            ? {
+                publishingAccount: "PERSONAL",
+                publishingAccountName: "John · Facebook",
+              }
+            : {}),
           caption: "Original caption for " + platform,
           ctaText: "Explore",
           ctaUrl: "https://example.com",
@@ -132,6 +138,10 @@ describe("Required three-platform workflow through authenticated API", () => {
         },
       );
       expect(v.status).toBe(201);
+      if (platform === "FACEBOOK") {
+        expect(v.data.publishingAccount).toBe("PERSONAL");
+        expect(v.data.publishingAccountName).toBe("John · Facebook");
+      }
       state.ids[platform] = v.data.id;
       state.versions[platform] = v.data.currentVersionId;
       expect(

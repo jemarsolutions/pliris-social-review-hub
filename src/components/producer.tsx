@@ -72,6 +72,12 @@ export function Editor({
       variant?.version.thumbnail || null,
     ),
     [caption, setCaption] = useState(variant?.version.caption || ""),
+    [publishingAccount, setPublishingAccount] = useState<"PLIRIS" | "PERSONAL">(
+      variant?.publishingAccount || "PLIRIS",
+    ),
+    [publishingAccountName, setPublishingAccountName] = useState(
+      variant?.publishingAccountName || "PLIRIS",
+    ),
     [imageAlt, setImageAlt] = useState(""),
     [videoAlt, setVideoAlt] = useState(""),
     [thumbnailAlt, setThumbnailAlt] = useState(""),
@@ -138,6 +144,8 @@ export function Editor({
           if (variant) {
             await api(`platform-variants/${variant.id}`, "PATCH", {
               ...snapshot,
+              publishingAccount,
+              publishingAccountName,
               expectedVersionId: variant.currentVersionId,
             });
             const planned = new Date(
@@ -152,6 +160,8 @@ export function Editor({
               ...snapshot,
               platform,
               contentFormat,
+              publishingAccount,
+              publishingAccountName,
               plannedPublishAt: new Date(
                 String(form.get("plannedPublishAt")) + "Z",
               ).toISOString(),
@@ -218,6 +228,33 @@ export function Editor({
                 ? variant.plannedPublishAt.slice(0, 16)
                 : `${item.contentDate}T16:00`
             }
+          />
+        </label>
+      </div>
+
+      <div className="form-grid">
+        <label>
+          Upload destination
+          <select
+            name="publishingAccount"
+            value={publishingAccount}
+            onChange={(event) =>
+              setPublishingAccount(event.target.value as "PLIRIS" | "PERSONAL")
+            }
+          >
+            <option value="PLIRIS">PLIRIS social account</option>
+            <option value="PERSONAL">Personal account</option>
+          </select>
+        </label>
+        <label>
+          Account label
+          <input
+            name="publishingAccountName"
+            value={publishingAccountName}
+            onChange={(event) => setPublishingAccountName(event.target.value)}
+            placeholder="John · Facebook"
+            maxLength={200}
+            required
           />
         </label>
       </div>

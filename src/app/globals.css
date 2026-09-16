@@ -631,6 +631,12 @@ blockquote {
   font-size: 0.78rem;
   margin-bottom: 17px;
 }
+.card-content > .destination-label {
+  color: #315c68;
+  font-weight: 600;
+  margin-top: -8px;
+  margin-bottom: 14px;
+}
 .card-footer {
   border-top: 1px solid #eef1f4;
   padding-top: 14px;

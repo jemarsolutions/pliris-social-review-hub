@@ -20,6 +20,7 @@ import {
   BriefcaseBusiness,
   Music2,
   Video,
+  Send,
 } from "lucide-react";
 import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
@@ -40,6 +41,7 @@ const nav = [
   ["Approved", CheckCheck],
   ["Revisions", RotateCcw],
   ["Archive", Archive],
+  ["Publishing", Send],
 ] as const;
 export const label = (v: string) =>
   v
@@ -132,6 +134,8 @@ export function Hub({
         ? v.reviewStatus === "APPROVED"
         : view === "Revisions"
           ? v.reviewStatus === "CHANGES_REQUESTED"
+          : view === "Publishing"
+            ? ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus)
           : view === "Archive"
             ? v.publishingStatus === "PUBLISHED"
             : true,
@@ -146,6 +150,15 @@ export function Hub({
         groups.set(key, group);
         return groups;
       }, new Map<string, { item: Item; variant: Variant }[]>()),
+  ).sort(([a], [b]) => a.localeCompare(b));
+  const publishingGroups = Array.from(
+    visible.reduce((groups, entry) => {
+      const key = entry.variant.plannedPublishAt.slice(0, 10);
+      const group = groups.get(key) || [];
+      group.push(entry);
+      groups.set(key, group);
+      return groups;
+    }, new Map<string, { item: Item; variant: Variant }[]>()),
   ).sort(([a], [b]) => a.localeCompare(b));
   const monday = new Date();
   monday.setUTCHours(0, 0, 0, 0);
@@ -253,6 +266,8 @@ export function Hub({
                         ? "Feedback to carry into the next version."
                         : view === "Calendar"
                           ? "A week of content, with every platform accounted for."
+                          : view === "Publishing"
+                            ? "Choose the destination account, then review every platform adaptation by publish date."
                           : view === "Archive"
                             ? "Manually recorded published content."
                             : "Create content ideas and their platform adaptations."}
@@ -328,6 +343,8 @@ export function Hub({
                     ? `${data.items.length} content ideas`
                     : view === "Review queue"
                       ? `${reviewGroups.length} content groups`
+                      : view === "Publishing"
+                        ? `${visible.length} destination cards`
                     : `${visible.length} platform adaptations`}
             </h2>
             {view === "Dashboard" ? (
@@ -518,7 +535,13 @@ export function Hub({
                 ))}
             </div>
           ) : (
-            <div className={view === "Review queue" ? "review-groups" : "review-grid"}>
+            <div
+              className={
+                view === "Review queue" || view === "Publishing"
+                  ? "review-groups"
+                  : "review-grid"
+              }
+            >
               {(view === "Review queue"
                 ? reviewGroups.flatMap(([dateKey, entries]) => [
                     <section className="review-group" key={dateKey}>
@@ -541,6 +564,28 @@ export function Hub({
                       </div>
                     </section>,
                   ])
+                : view === "Publishing"
+                  ? publishingGroups.flatMap(([dateKey, entries]) => [
+                      <section className="review-group" key={dateKey}>
+                        <header className="review-group-heading">
+                          <div>
+                            <p className="eyebrow">PLANNED PUBLISH DATE</p>
+                            <h3>{formatDate(dateKey, true)}</h3>
+                          </div>
+                          <span>{entries.length} cards</span>
+                        </header>
+                        <div className="review-grid">
+                          {entries.map(({ item, variant: v }) => (
+                            <ReviewCard
+                              key={v.id}
+                              item={item}
+                              variant={v}
+                              open={open}
+                            />
+                          ))}
+                        </div>
+                      </section>,
+                    ])
                 : (view === "Dashboard" ? visible.slice(0, 6) : visible).map(
                     ({ item, variant: v }) => (
                       <ReviewCard
@@ -698,6 +743,10 @@ function ReviewCard({
         </div>
         <h3>{item.title}</h3>
         <p>{formatDate(v.plannedPublishAt, true)}</p>
+        <p className="destination-label">
+          {v.publishingAccount === "PERSONAL" ? "Personal · " : "PLIRIS · "}
+          {v.publishingAccountName}
+        </p>
         <div className="card-footer">
           <Status value={v.reviewStatus} />
           <ArrowUpRight size={18} />

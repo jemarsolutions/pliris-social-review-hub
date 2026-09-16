@@ -69,12 +69,7 @@ export function Review({
   );
   const media = version.media[slide];
   const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(variant.contentFormat);
-  const accountName =
-    variant.platform === "INSTAGRAM"
-      ? "plirisco"
-      : variant.platform === "YOUTUBE"
-        ? "Build Better Homes"
-        : "PLIRIS Co";
+  const accountName = variant.publishingAccountName;
   async function action(path: string, data: unknown) {
     setBusy(true);
     setError("");
@@ -322,6 +317,15 @@ export function Review({
                   </dd>
                 </div>
               )}
+              <div>
+                <dt>Upload account</dt>
+                <dd>
+                  {variant.publishingAccount === "PERSONAL"
+                    ? "Personal · "
+                    : "PLIRIS · "}
+                  {variant.publishingAccountName}
+                </dd>
+              </div>
               {version.ctaText && (
                 <div>
                   <dt>Call to action</dt>

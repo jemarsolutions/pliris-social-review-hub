@@ -52,6 +52,8 @@ export const variantSchema = z
     platform: platformSchema,
     contentFormat: contentFormatSchema.default("IMAGE_POST"),
     plannedPublishAt: z.iso.datetime(),
+    publishingAccount: z.enum(["PLIRIS", "PERSONAL"]).default("PLIRIS"),
+    publishingAccountName: z.string().trim().min(1).max(200).default("PLIRIS"),
     ...snapshotFields,
   })
   .strict()
@@ -64,7 +66,12 @@ export const variantSchema = z
       });
   });
 export const editSchema = z
-  .object({ ...snapshotFields, expectedVersionId: z.string().min(1) })
+  .object({
+    ...snapshotFields,
+    expectedVersionId: z.string().min(1),
+    publishingAccount: z.enum(["PLIRIS", "PERSONAL"]).optional(),
+    publishingAccountName: z.string().trim().min(1).max(200).optional(),
+  })
   .strict();
 export const decisionSchema = z
   .object({

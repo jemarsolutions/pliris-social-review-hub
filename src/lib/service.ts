@@ -275,6 +275,8 @@ export async function createVariant(
       platform: data.platform,
       contentFormat: data.contentFormat,
       plannedPublishAt: new Date(data.plannedPublishAt),
+      publishingAccount: data.publishingAccount,
+      publishingAccountName: data.publishingAccountName,
     });
     const versionId = await insertVersion(tx, actor, variantId, 1, data);
     const [variant] = await tx
@@ -297,6 +299,10 @@ export async function editVariant(
     const v = await lock(tx, variantId);
     requireVersion(v.currentVersionId, data.expectedVersionId);
     assertPayloadShape(v.platform, v.contentFormat, data);
+    const publishingAccount =
+      data.publishingAccount || v.publishingAccount;
+    const publishingAccountName =
+      data.publishingAccountName || v.publishingAccountName;
     const [previous] = await tx
       .select()
       .from(s.versions)
@@ -313,8 +319,23 @@ export async function editVariant(
       (previous.thumbnail?.id || null) === data.thumbnailId &&
       JSON.stringify(previous.media.map((m) => m.id)) ===
         JSON.stringify(data.mediaIds)
-    )
-      return v;
+    ) {
+      if (
+        publishingAccount === v.publishingAccount &&
+        publishingAccountName === v.publishingAccountName
+      )
+        return v;
+      const [updated] = await tx
+        .update(s.platformVariants)
+        .set({ publishingAccount, publishingAccountName, updatedAt: new Date() })
+        .where(eq(s.platformVariants.id, variantId))
+        .returning();
+      await audit(tx, actor, "PUBLISHING_ACCOUNT_CHANGED", variantId, {
+        publishingAccount,
+        publishingAccountName,
+      });
+      return updated;
+    }
     const versionId = await insertVersion(
       tx,
       actor,
@@ -343,6 +364,8 @@ export async function editVariant(
       .set({
         currentVersionId: versionId,
         reviewStatus,
+        publishingAccount,
+        publishingAccountName,
         publishingStatus: "UNSCHEDULED",
         updatedAt: new Date(),
       })
