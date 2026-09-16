@@ -131,11 +131,12 @@ export function Hub({
     view === "Dashboard" || view === "Review queue"
       ? v.reviewStatus === "READY_FOR_REVIEW"
       : view === "Approved"
-        ? v.reviewStatus === "APPROVED"
+        ? v.reviewStatus === "APPROVED" && v.publishingStatus !== "PUBLISHED"
         : view === "Revisions"
           ? v.reviewStatus === "CHANGES_REQUESTED"
           : view === "Publishing"
-            ? ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus)
+            ? ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus) &&
+              v.publishingStatus !== "PUBLISHED"
           : view === "Archive"
             ? v.publishingStatus === "PUBLISHED"
             : true,

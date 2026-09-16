@@ -440,7 +440,8 @@ export function Review({
                     Submit for review
                   </Button>
                 )}
-                {variant.reviewStatus === "APPROVED" && (
+                {variant.reviewStatus === "APPROVED" &&
+                  variant.publishingStatus !== "PUBLISHED" && (
                   <Button
                     className="full"
                     variant="outline"
@@ -448,6 +449,12 @@ export function Review({
                   >
                     Record scheduling / publication
                   </Button>
+                )}
+                {variant.publishingStatus === "PUBLISHED" && (
+                  <small>
+                    This version is already recorded as published. Find it in
+                    Archive or review its publication history.
+                  </small>
                 )}
                 <small>
                   Editing reviewed content creates a new version and resets its

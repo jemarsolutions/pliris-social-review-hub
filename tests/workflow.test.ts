@@ -434,6 +434,31 @@ describe("Integrity and authorization", () => {
         )
       ).status,
     ).toBe(409);
+    const published = await call(
+      `platform-variants/${state.ids.FACEBOOK}/publishing`,
+      "POST",
+      {
+        expectedVersionId: state.versions.FACEBOOK,
+        status: "PUBLISHED",
+        publishedAt: new Date().toISOString(),
+        publishedUrl: "https://example.com/facebook",
+      },
+    );
+    expect(published.status).toBe(201);
+    expect(
+      (
+        await call(
+          `platform-variants/${state.ids.FACEBOOK}/publishing`,
+          "POST",
+          {
+            expectedVersionId: state.versions.FACEBOOK,
+            status: "PUBLISHED",
+            publishedAt: new Date().toISOString(),
+            publishedUrl: "https://example.com/facebook-again",
+          },
+        )
+      ).status,
+    ).toBe(409);
     expect(
       (
         await call(

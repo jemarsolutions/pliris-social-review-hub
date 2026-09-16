@@ -506,6 +506,11 @@ export async function recordPublishing(
   return getDb().transaction(async (tx) => {
     const v = await lock(tx, variantId);
     requireVersion(v.currentVersionId, data.expectedVersionId);
+    if (v.publishingStatus === "PUBLISHED")
+      throw new AppError(
+        409,
+        "This version is already recorded as published.",
+      );
     if (data.status !== "UNSCHEDULED" && v.reviewStatus !== "APPROVED")
       throw new AppError(409, "Current version must be approved first.");
     if (data.status === "SCHEDULED" && !data.scheduledAt)
