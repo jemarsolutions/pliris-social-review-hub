@@ -760,39 +760,49 @@ function ContentAdaptations({
   item: Item;
   open: (item: Item, variant: Variant) => void;
 }) {
-  const company = item.variants.filter(
-    (variant) => variant.publishingAccount === "PLIRIS",
+  const platforms = Array.from(
+    new Set(item.variants.map((variant) => variant.platform)),
   );
-  const personal = item.variants.filter(
-    (variant) => variant.publishingAccount === "PERSONAL",
-  );
-  const render = (variants: Variant[]) => (
-    <div className="actions">
-      {variants.map((v) => (
-        <Button
-          key={v.id}
-          variant="outline"
-          onClick={() => open(item, v)}
-        >
-          <Platform value={v.platform} />
-          <span className="format-badge">{label(v.contentFormat)}</span>
-          <Status value={v.reviewStatus} />
-        </Button>
-      ))}
-    </div>
+  const renderButton = (variant: Variant, personal = false) => (
+    <Button
+      key={variant.id}
+      variant="outline"
+      onClick={() => open(item, variant)}
+    >
+      {!personal && <Platform value={variant.platform} />}
+      {personal && <strong>{variant.publishingAccountName}</strong>}
+      <span className="format-badge">{label(variant.contentFormat)}</span>
+      <Status value={variant.reviewStatus} />
+    </Button>
   );
   return (
     <div className="content-adaptations">
-      <div>
-        <p className="adaptation-label">PLIRIS SOCIAL</p>
-        {render(company)}
-      </div>
-      {personal.length > 0 && (
-        <div className="personal-adaptations">
-          <p className="adaptation-label">PERSONAL ACCOUNTS</p>
-          {render(personal)}
-        </div>
-      )}
+      {platforms.map((platform) => {
+        const variants = item.variants.filter(
+          (variant) => variant.platform === platform,
+        );
+        const company = variants.filter(
+          (variant) => variant.publishingAccount === "PLIRIS",
+        );
+        const personal = variants.filter(
+          (variant) => variant.publishingAccount === "PERSONAL",
+        );
+        return (
+          <div className="platform-adaptation" key={platform}>
+            <div className="actions">
+              {company.map((variant) => renderButton(variant))}
+            </div>
+            {personal.length > 0 && (
+              <div className="personal-variants">
+                <span className="adaptation-label">PERSONAL</span>
+                <div className="actions">
+                  {personal.map((variant) => renderButton(variant, true))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

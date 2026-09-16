@@ -759,16 +759,23 @@ blockquote {
   gap: 12px;
   margin-top: 16px;
 }
+.platform-adaptation {
+  display: grid;
+  gap: 7px;
+}
 .adaptation-label {
-  margin: 0 0 7px;
+  display: inline-block;
+  margin: 0;
   color: #687a8f;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
-.personal-adaptations {
-  border-top: 1px solid #e5ebef;
-  padding-top: 12px;
+.personal-variants {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 27px;
 }
 .content-item p {
   font-size: 0.88rem;
