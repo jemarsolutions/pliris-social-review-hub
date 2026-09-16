@@ -604,6 +604,11 @@ export async function recordPublishing(
   return getDb().transaction(async (tx) => {
     const v = await lock(tx, variantId);
     requireVersion(v.currentVersionId, data.expectedVersionId);
+    if (v.publishingAccount === "PERSONAL")
+      throw new AppError(
+        409,
+        "Personal mirrors follow the PLIRIS publishing workflow and cannot be scheduled or published independently.",
+      );
     if (v.publishingStatus === "PUBLISHED")
       throw new AppError(
         409,
@@ -657,7 +662,7 @@ export async function planVariant(
   if (!plannedPublishAt || Number.isNaN(Date.parse(plannedPublishAt)))
     throw new AppError(422, "Valid timestamp required.");
   return getDb().transaction(async (tx) => {
-    await lock(tx, variantId);
+    const source = await lock(tx, variantId);
     const [v] = await tx
       .update(s.platformVariants)
       .set({
@@ -669,6 +674,29 @@ export async function planVariant(
     await audit(tx, actor, "PLANNED_DATE_CHANGED", variantId, {
       plannedPublishAt,
     });
+    if (source.publishingAccount === "PLIRIS") {
+      const personalMirrors = await tx
+        .select()
+        .from(s.platformVariants)
+        .where(
+          and(
+            eq(s.platformVariants.contentItemId, source.contentItemId),
+            eq(s.platformVariants.platform, source.platform),
+            eq(s.platformVariants.contentFormat, source.contentFormat),
+            eq(s.platformVariants.publishingAccount, "PERSONAL"),
+          ),
+        );
+      for (const personal of personalMirrors) {
+        await tx
+          .update(s.platformVariants)
+          .set({ plannedPublishAt: new Date(plannedPublishAt), updatedAt: new Date() })
+          .where(eq(s.platformVariants.id, personal.id));
+        await audit(tx, actor, "PERSONAL_MIRROR_PLAN_SYNCED", personal.id, {
+          sourceVariantId: variantId,
+          plannedPublishAt,
+        });
+      }
+    }
     return v;
   });
 }

@@ -459,6 +459,7 @@ export function Hub({
                     {filtered
                       .filter(
                         ({ variant: v }) =>
+                          v.publishingAccount === "PLIRIS" &&
                           v.plannedPublishAt.slice(0, 10) === dateKey,
                       )
                       .map(({ item, variant }) => (

@@ -149,6 +149,77 @@ describe("Required three-platform workflow through authenticated API", () => {
         (v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL",
       ),
     ).toHaveLength(6);
+    const linkedinMirrors = grouped.data[0].variants.filter(
+      (v: { platform: string; publishingAccount: string }) =>
+        v.platform === "LINKEDIN" && v.publishingAccount === "PERSONAL",
+    );
+    const originalMirrorStatuses = linkedinMirrors.map(
+      (v: { reviewStatus: string; publishingStatus: string }) => ({
+        reviewStatus: v.reviewStatus,
+        publishingStatus: v.publishingStatus,
+      }),
+    );
+    const plannedDate = new Date(Date.now() + 3 * 86400000).toISOString();
+    expect(
+      (
+        await call(
+          `platform-variants/${state.ids.LINKEDIN}/plan`,
+          "POST",
+          { plannedPublishAt: plannedDate },
+        )
+      ).status,
+    ).toBe(201);
+    const afterPlan = await call("content");
+    const linkedInVariants = afterPlan.data[0].variants.filter(
+      (v: { platform: string }) => v.platform === "LINKEDIN",
+    );
+    expect(
+      linkedInVariants.every(
+        (v: { plannedPublishAt: string }) =>
+          v.plannedPublishAt === plannedDate,
+      ),
+    ).toBe(true);
+    expect(
+      linkedInVariants
+        .filter((v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL")
+        .map((v: { reviewStatus: string; publishingStatus: string }) => ({
+          reviewStatus: v.reviewStatus,
+          publishingStatus: v.publishingStatus,
+        })),
+    ).toEqual(originalMirrorStatuses);
+    const calendar = await call("calendar");
+    expect(calendar.data).toHaveLength(3);
+    expect(
+      calendar.data.every(
+        (v: { publishingAccount: string }) => v.publishingAccount === "PLIRIS",
+      ),
+    ).toBe(true);
+    const personalLinkedIn = linkedinMirrors[0];
+    for (const publishing of [
+      {
+        status: "SCHEDULED",
+        scheduledAt: plannedDate,
+      },
+      {
+        status: "PUBLISHED",
+        publishedAt: new Date().toISOString(),
+        publishedUrl: "https://example.com/personal-linkedin",
+      },
+    ]) {
+      expect(
+        (
+          await call(
+            `platform-variants/${personalLinkedIn.id}/publishing`,
+            "POST",
+            { expectedVersionId: personalLinkedIn.currentVersionId, ...publishing },
+          )
+        ).status,
+      ).toBe(409);
+    }
+    const personalHistory = await call(
+      `platform-variants/${personalLinkedIn.id}/history`,
+    );
+    expect(personalHistory.data.publishing).toHaveLength(0);
     const queue = await call("review-queue", "GET", undefined, johnCookie);
     expect(queue.data).toHaveLength(3);
     expect(
