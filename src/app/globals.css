@@ -758,17 +758,18 @@ blockquote {
   font-size: 1rem;
 }
 .content-adaptations {
-  display: grid;
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 14px;
 }
 .platform-adaptation {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   min-height: 38px;
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 .platform-main,
 .personal-variants {
