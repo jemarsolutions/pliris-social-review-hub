@@ -680,19 +680,34 @@ body.theme-dark .preview-mode-indicator {
   color: #526477;
 }
 .platform-instagram svg {
-  color: #ac5683;
+  color: #d94675;
 }
 .platform-facebook svg {
-  color: #4275a9;
+  color: #1877f2;
 }
 .platform-linkedin svg {
-  color: #286b8d;
+  color: #0a66c2;
 }
 .platform-youtube svg {
-  color: #d62d2d;
+  color: #ff0000;
 }
 .platform-tiktok svg {
-  color: #162d3b;
+  color: #111827;
+}
+body.theme-dark .platform-instagram svg {
+  color: #ff78a2;
+}
+body.theme-dark .platform-facebook svg {
+  color: #73aaff;
+}
+body.theme-dark .platform-linkedin svg {
+  color: #70b7ff;
+}
+body.theme-dark .platform-youtube svg {
+  color: #ff7373;
+}
+body.theme-dark .platform-tiktok svg {
+  color: #d7faff;
 }
 .format-badge {
   display: inline-flex;

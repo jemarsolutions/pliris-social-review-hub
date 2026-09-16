@@ -15,15 +15,18 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
-  Camera,
-  MessageSquare,
-  BriefcaseBusiness,
-  Music2,
   Video,
   Clock3,
   Moon,
   Sun,
 } from "lucide-react";
+import {
+  SiFacebook,
+  SiInstagram,
+  SiTiktok,
+  SiYoutube,
+} from "react-icons/si";
+import { FaLinkedin } from "react-icons/fa6";
 import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
 import {
@@ -60,14 +63,14 @@ export function Status({ value }: { value: string }) {
 export function Platform({ value }: { value: string }) {
   const Icon =
     value === "INSTAGRAM"
-      ? Camera
+      ? SiInstagram
       : value === "FACEBOOK"
-        ? MessageSquare
+        ? SiFacebook
         : value === "LINKEDIN"
-          ? BriefcaseBusiness
+          ? FaLinkedin
           : value === "YOUTUBE"
-            ? Video
-            : Music2;
+            ? SiYoutube
+            : SiTiktok;
   return (
     <span className={`platform platform-${value.toLowerCase()}`}>
       <Icon size={15} />
