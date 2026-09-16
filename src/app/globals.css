@@ -13,6 +13,15 @@
   color-scheme: light;
   font-family: Arial, Helvetica, sans-serif;
 }
+body.theme-dark {
+  --background: #111a22;
+  --foreground: #e8eef2;
+  --muted: #a8b7c2;
+  --border: #30414d;
+  --primary: #68b6c2;
+  --primary-foreground: #102029;
+  color-scheme: dark;
+}
 * {
   box-sizing: border-box;
 }
@@ -385,6 +394,87 @@ blockquote {
 .private-label {
   font-size: 0.75rem;
   letter-spacing: 0.1em;
+}
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #cbd7df;
+  border-radius: 50%;
+  color: #526978;
+  background: #f2f6f8;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.theme-toggle:hover {
+  color: #173f50;
+  background: #e2edf0;
+}
+.theme-toggle.theme-pending {
+  visibility: hidden;
+}
+body.theme-dark .topbar {
+  background: #17232d;
+  color: #b7c7d1;
+}
+body.theme-dark .theme-toggle {
+  border-color: #48616e;
+  color: #f1c86b;
+  background: #243743;
+}
+body.theme-dark .theme-toggle:hover {
+  background: #2d4654;
+}
+body.theme-dark .sidebar {
+  background: #0b151d;
+  border-color: #263944;
+}
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select,
+body.theme-dark .dialog-content,
+body.theme-dark .content-item,
+body.theme-dark .review-card,
+body.theme-dark .metric,
+body.theme-dark .coverage,
+body.theme-dark .calendar,
+body.theme-dark .empty {
+  color: var(--foreground);
+  background: #1a2833;
+  border-color: var(--border);
+}
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select {
+  background: #14212a;
+  color: var(--foreground);
+}
+body.theme-dark .button-outline {
+  color: #dce8ed;
+  background: #20313c;
+  border-color: #48616e;
+}
+body.theme-dark .button-ghost:hover,
+body.theme-dark .button-outline:hover {
+  background: #2b414e;
+}
+body.theme-dark .card-footer,
+body.theme-dark .content-adaptations,
+body.theme-dark .review-group,
+body.theme-dark .workspace-footer {
+  border-color: #30414d;
+}
+body.theme-dark .personal-preview-item,
+body.theme-dark .preview-mode-indicator {
+  background: #1b3439;
+  border-color: #3c6e70;
+  color: #d9eeee;
 }
 .main-content {
   padding: 36px 42px 22px;

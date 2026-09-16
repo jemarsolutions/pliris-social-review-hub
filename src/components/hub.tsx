@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Inbox,
@@ -22,6 +22,8 @@ import {
   Video,
   Send,
   Clock3,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
@@ -106,7 +108,22 @@ export function Hub({
     [date, setDate] = useState(""),
     [query, setQuery] = useState(""),
     [weekOffset, setWeekOffset] = useState(0),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [darkMode, setDarkMode] = useState(false),
+    [themeReady, setThemeReady] = useState(false);
+  useEffect(() => {
+    const saved = window.localStorage.getItem("pliris-theme");
+    const next = saved === "dark";
+    setDarkMode(next);
+    document.body.classList.toggle("theme-dark", next);
+    setThemeReady(true);
+  }, []);
+  function toggleTheme() {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.body.classList.toggle("theme-dark", next);
+    window.localStorage.setItem("pliris-theme", next ? "dark" : "light");
+  }
   const producer = user.role !== "REVIEWER";
   async function refresh() {
     const fresh = await api<HubData>("dashboard");
@@ -245,9 +262,20 @@ export function Hub({
           <span>
             PLIRIS Co <span className="divider">/</span> {view}
           </span>
-          <span className="private-label">
-            {localDemo ? "LOCAL DEMO · SAMPLE CONTENT" : "PRIVATE WORKSPACE"}
-          </span>
+          <div className="topbar-tools">
+            <span className="private-label">
+              {localDemo ? "LOCAL DEMO · SAMPLE CONTENT" : "PRIVATE WORKSPACE"}
+            </span>
+            <button
+              className={`theme-toggle ${themeReady ? "" : "theme-pending"}`}
+              type="button"
+              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={toggleTheme}
+            >
+              {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+          </div>
         </header>
         <div className="main-content">
           <div className="page-heading">
