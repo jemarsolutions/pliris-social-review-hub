@@ -764,17 +764,20 @@ function ContentAdaptations({
   open: (item: Item, variant: Variant) => void;
 }) {
   const platforms = Array.from(
-    new Set(item.variants.map((variant) => variant.platform)),
+    new Set(
+      item.variants
+        .filter((variant) => variant.publishingAccount === "PLIRIS")
+        .map((variant) => variant.platform),
+    ),
   );
-  const renderButton = (variant: Variant, personal = false) => (
+  const renderButton = (variant: Variant) => (
     <Button
       key={variant.id}
       variant="outline"
-      className={personal ? "personal-adaptation-button" : "platform-adaptation-button"}
+      className="platform-adaptation-button"
       onClick={() => open(item, variant)}
     >
-      {!personal && <Platform value={variant.platform} />}
-      {personal && <strong>{variant.publishingAccountName}</strong>}
+      <Platform value={variant.platform} />
       <span className="format-badge">{label(variant.contentFormat)}</span>
       <Status value={variant.reviewStatus} />
     </Button>
@@ -783,25 +786,15 @@ function ContentAdaptations({
     <div className="content-adaptations">
       {platforms.map((platform) => {
         const variants = item.variants.filter(
-          (variant) => variant.platform === platform,
-        );
-        const company = variants.filter(
-          (variant) => variant.publishingAccount === "PLIRIS",
-        );
-        const personal = variants.filter(
-          (variant) => variant.publishingAccount === "PERSONAL",
+          (variant) =>
+            variant.platform === platform &&
+            variant.publishingAccount === "PLIRIS",
         );
         return (
           <div className="platform-adaptation" key={platform}>
             <div className="platform-main">
-              {company.map((variant) => renderButton(variant))}
+              {variants.map((variant) => renderButton(variant))}
             </div>
-            {personal.length > 0 && (
-              <div className="personal-variants">
-                <span className="adaptation-label">PERSONAL</span>
-                {personal.map((variant) => renderButton(variant, true))}
-              </div>
-            )}
           </div>
         );
       })}

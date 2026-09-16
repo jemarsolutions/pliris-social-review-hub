@@ -51,7 +51,8 @@ export function Review({
     [message, setMessage] = useState(""),
     [enlarged, setEnlarged] = useState(false),
     [tab, setTab] = useState("Review"),
-    [publishing, setPublishing] = useState(false);
+    [publishing, setPublishing] = useState(false),
+    [previewVariant, setPreviewVariant] = useState(variant);
   async function load() {
     setHistory(await api<History>(`platform-variants/${variant.id}/history`));
   }
@@ -60,6 +61,7 @@ export function Review({
     setVersionId(variant.currentVersionId);
     setSlide(0);
     setTab("Review");
+    setPreviewVariant(variant);
   }, [variant.id, variant.currentVersionId, variant.reviewStatus]);
   const version =
     history?.versions.find((v) => v.id === versionId) || variant.version;
@@ -70,6 +72,12 @@ export function Review({
   const media = version.media[slide];
   const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(variant.contentFormat);
   const accountName = variant.publishingAccountName;
+  const previewVersion =
+    previewVariant.id === variant.id ? version : previewVariant.version;
+  const previewMedia = previewVersion.media[slide];
+  const previewIsVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(
+    previewVariant.contentFormat,
+  );
   const personalVariants = item.variants.filter(
     (candidate) =>
       variant.publishingAccount === "PLIRIS" &&
@@ -98,18 +106,23 @@ export function Review({
     <div className="review-layout">
       <div className="preview-column">
         <header className="preview-heading">
-          <Platform value={variant.platform} />
-          <span>{label(variant.contentFormat)} · Platform preview</span>
+          <Platform value={previewVariant.platform} />
+          <span>
+            {previewVariant.publishingAccount === "PERSONAL"
+              ? `${previewVariant.publishingAccountName} · `
+              : ""}
+            {label(previewVariant.contentFormat)} · Platform preview
+          </span>
         </header>
         <div
-          className={`social-preview social-${variant.platform.toLowerCase()}`}
+          className={`social-preview social-${previewVariant.platform.toLowerCase()}`}
         >
           <div className="social-account">
             <div className="brand-avatar">P</div>
             <div>
-              <strong>{accountName}</strong>
+              <strong>{previewVariant.publishingAccountName}</strong>
               <small>
-                {variant.platform === "LINKEDIN"
+                {previewVariant.platform === "LINKEDIN"
                   ? "Residential design · Sample content"
                   : "Sample content"}
               </small>
@@ -117,39 +130,39 @@ export function Review({
             <MoreHorizontal size={22} />
           </div>
           {!["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
-            <p className="caption pre-media">{version.caption}</p>
+              <p className="caption pre-media">{previewVersion.caption}</p>
           )}
           <div
             className={`preview-media ${
-              isVideo
+                previewIsVideo
                 ? `video-preview ${
-                    variant.contentFormat === "SHORT_VIDEO"
+                  previewVariant.contentFormat === "SHORT_VIDEO"
                       ? "portrait-video"
                       : "landscape-video"
                   }`
                 : ""
             }`}
           >
-            {isVideo && version.video ? (
+            {previewIsVideo && previewVersion.video ? (
               <video
                 controls
                 preload="metadata"
-                aria-label={version.video.altText}
-                src={`/api/media/${version.video.id}`}
+                aria-label={previewVersion.video.altText}
+                src={`/api/media/${previewVersion.video.id}`}
                 poster={
-                  version.thumbnail
-                    ? `/api/media/${version.thumbnail.id}?thumb=1`
-                    : `/api/media/${version.video.id}?thumb=1`
+                  previewVersion.thumbnail
+                    ? `/api/media/${previewVersion.thumbnail.id}?thumb=1`
+                    : `/api/media/${previewVersion.video.id}?thumb=1`
                 }
               />
-            ) : media ? (
-              <img src={`/api/media/${media.id}`} alt={media.altText} />
+            ) : previewMedia ? (
+              <img src={`/api/media/${previewMedia.id}`} alt={previewMedia.altText} />
             ) : (
               <div className="no-media">
-                No {isVideo ? "video" : "image"} attached
+                No {previewIsVideo ? "video" : "image"} attached
               </div>
             )}
-            {!isVideo && media && (
+            {!previewIsVideo && previewMedia && (
               <button
                 className="enlarge"
                 aria-label="Enlarge image"
@@ -158,7 +171,7 @@ export function Review({
                 <Maximize2 size={18} />
               </button>
             )}
-            {!isVideo && version.media.length > 1 && (
+            {!previewIsVideo && previewVersion.media.length > 1 && (
               <>
                 <button
                   className="slide-arrow previous"
@@ -171,19 +184,19 @@ export function Review({
                 <button
                   className="slide-arrow next"
                   aria-label="Next slide"
-                  disabled={slide === version.media.length - 1}
+                  disabled={slide === previewVersion.media.length - 1}
                   onClick={() => setSlide((s) => s + 1)}
                 >
                   <ArrowRight size={18} />
                 </button>
                 <span className="slide-counter">
-                  {slide + 1} / {version.media.length}
+                  {slide + 1} / {previewVersion.media.length}
                 </span>
               </>
             )}
           </div>
           <div className="preview-icons" aria-hidden="true">
-            {["INSTAGRAM", "TIKTOK"].includes(variant.platform) ? (
+            {["INSTAGRAM", "TIKTOK"].includes(previewVariant.platform) ? (
               <>
                 <Heart />
                 <MessageCircle />
@@ -200,27 +213,27 @@ export function Review({
               </>
             )}
           </div>
-          {isVideo && version.headline && (
-            <h3 className="video-headline">{version.headline}</h3>
+          {previewIsVideo && previewVersion.headline && (
+            <h3 className="video-headline">{previewVersion.headline}</h3>
           )}
-          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
+          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(previewVariant.platform) && (
             <p className="caption">
-              {variant.platform !== "YOUTUBE" && (
-                <strong>{accountName} </strong>
+              {previewVariant.platform !== "YOUTUBE" && (
+                <strong>{previewVariant.publishingAccountName} </strong>
               )}
-              {version.caption}
+              {previewVersion.caption}
             </p>
           )}
-          {version.ctaText && (
+          {previewVersion.ctaText && (
             <div className="preview-cta">
-              {version.ctaText}
+              {previewVersion.ctaText}
               <ArrowUpRightIcon />
             </div>
           )}
         </div>
-        {!isVideo && version.media.length > 1 && (
+        {!previewIsVideo && previewVersion.media.length > 1 && (
           <div className="thumbnails" aria-label="Carousel slides">
-            {version.media.map((m, i) => (
+            {previewVersion.media.map((m, i) => (
               <button
                 key={m.id}
                 aria-label={`View slide ${i + 1}`}
@@ -286,7 +299,16 @@ export function Review({
             </p>
             <div className="personal-preview-list">
               {personalVariants.map((personal) => (
-                <div className="personal-preview-item" key={personal.id}>
+                <button
+                  className={`personal-preview-item ${
+                    previewVariant.id === personal.id ? "selected" : ""
+                  }`}
+                  key={personal.id}
+                  onClick={() => {
+                    setPreviewVariant(personal);
+                    setSlide(0);
+                  }}
+                >
                   <div>
                     <strong>{personal.publishingAccountName}</strong>
                     <small>
@@ -294,7 +316,7 @@ export function Review({
                     </small>
                   </div>
                   <span className="sync-state">Auto-synced</span>
-                </div>
+                </button>
               ))}
             </div>
           </section>
@@ -459,7 +481,7 @@ export function Review({
                   </small>
                 </section>
               )}
-            {current && !reviewer && (
+            {current && !reviewer && variant.publishingAccount === "PLIRIS" && (
               <section className="review-actions">
                 <h3>Production actions</h3>
                 <Button variant="outline" className="full" onClick={onEdit}>
@@ -631,8 +653,10 @@ export function Review({
       <Dialog open={enlarged} onOpenChange={setEnlarged}>
         <DialogContent className="image-dialog">
           <DialogTitle>Slide {slide + 1}</DialogTitle>
-          <DialogDescription>{media?.altText}</DialogDescription>
-          {media && <img src={`/api/media/${media.id}`} alt={media.altText} />}
+          <DialogDescription>{previewMedia?.altText}</DialogDescription>
+          {previewMedia && (
+            <img src={`/api/media/${previewMedia.id}`} alt={previewMedia.altText} />
+          )}
         </DialogContent>
       </Dialog>
       <Dialog open={publishing} onOpenChange={setPublishing}>
