@@ -1983,6 +1983,235 @@ body.theme-dark .preview-mode-indicator {
 .card-content > p {
   font-size: 0.875rem;
 }
+
+/* Dark theme contrast layer for surfaces that use fixed light-mode colors. */
+body.theme-dark {
+  --brand-navy: #8fd3dc;
+  --primary: #79c7d2;
+  --ring: #79c7d2;
+}
+body.theme-dark .brand-copy strong,
+body.theme-dark .brand-copy small,
+body.theme-dark .page-heading h1,
+body.theme-dark .section-heading h2,
+body.theme-dark .content-item h3,
+body.theme-dark .card-content h3,
+body.theme-dark .decision-column h2,
+body.theme-dark .review-actions h3,
+body.theme-dark .script-panel h3,
+body.theme-dark .personal-preview-panel h3,
+body.theme-dark .editor-section-heading h3 {
+  color: #edf5f7;
+}
+body.theme-dark .page-heading p,
+body.theme-dark .content-item p,
+body.theme-dark .card-content > p,
+body.theme-dark .preview-note,
+body.theme-dark .workspace-footer,
+body.theme-dark .review-group-heading > span,
+body.theme-dark .version-bar,
+body.theme-dark .details dt,
+body.theme-dark .comment small,
+body.theme-dark .timeline-event small,
+body.theme-dark .editor-section-heading p,
+body.theme-dark .video-asset-card span,
+body.theme-dark .format-summary span {
+  color: #b7c7d0;
+}
+body.theme-dark .eyebrow,
+body.theme-dark .review-group-heading .eyebrow,
+body.theme-dark .adaptation-label {
+  color: #9cc5cf;
+}
+body.theme-dark .metric,
+body.theme-dark .content-item,
+body.theme-dark .review-card,
+body.theme-dark .empty,
+body.theme-dark .calendar,
+body.theme-dark .calendar-day,
+body.theme-dark .dialog-content,
+body.theme-dark .script-panel pre,
+body.theme-dark .decision-receipt,
+body.theme-dark .video-asset-card,
+body.theme-dark .thumbnail-asset-card,
+body.theme-dark .format-summary {
+  background: #1a2833;
+  border-color: #3b4e5b;
+  color: #e8f0f3;
+}
+body.theme-dark .content-item {
+  background: linear-gradient(115deg, #1b2b36 0%, #17252f 100%);
+}
+body.theme-dark .coverage {
+  background: #20343e;
+  border-color: #45616d;
+}
+body.theme-dark .coverage h2,
+body.theme-dark .coverage-percent {
+  color: #e2f1f2;
+}
+body.theme-dark .coverage h2 span,
+body.theme-dark .coverage p:last-child {
+  color: #b7cbd1;
+}
+body.theme-dark .progress {
+  background: #3b5661;
+}
+body.theme-dark .progress i {
+  background: #75c6b9;
+}
+body.theme-dark .agenda-item {
+  background: #20323d;
+  border-color: #405866;
+  color: #e6f0f2;
+}
+body.theme-dark .agenda-item .platform,
+body.theme-dark .platform,
+body.theme-dark .card-meta small,
+body.theme-dark .video-placeholder {
+  color: #c4d6dc;
+}
+body.theme-dark .format-badge {
+  background: #2d414c;
+  color: #d5e4e8;
+}
+body.theme-dark .card-footer {
+  border-color: #3a4b57;
+}
+body.theme-dark .card-footer > svg {
+  color: #a9c0c9;
+}
+body.theme-dark .content-item .button.platform-adaptation-button {
+  background: #223640;
+  border-color: #506873;
+  color: #e4f0f2;
+}
+body.theme-dark .content-item .button.platform-adaptation-button:hover {
+  background: #2d4753;
+}
+body.theme-dark .status {
+  color: #d9e8ec;
+  background: #30434d;
+}
+body.theme-dark .status-ready_for_review {
+  color: #ffe0a2;
+  background: #5d4828;
+}
+body.theme-dark .status-approved {
+  color: #b9f0d0;
+  background: #24533f;
+}
+body.theme-dark .status-changes_requested {
+  color: #ffd0ae;
+  background: #603d2b;
+}
+body.theme-dark .status-rejected {
+  color: #ffbec8;
+  background: #5d2d38;
+}
+body.theme-dark .status-published {
+  color: #c9d6ff;
+  background: #334276;
+}
+body.theme-dark .dialog-close {
+  background: #2c414d;
+  color: #dcebef;
+}
+body.theme-dark .preview-column {
+  background: #182630;
+}
+body.theme-dark .decision-column {
+  background: #14212a;
+}
+body.theme-dark .social-preview {
+  background: #1a2833;
+  border-color: #405661;
+}
+body.theme-dark .social-account,
+body.theme-dark .preview-icons,
+body.theme-dark .caption,
+body.theme-dark .video-headline,
+body.theme-dark .social-preview .preview-cta {
+  color: #e4eef1;
+}
+body.theme-dark .social-account small,
+body.theme-dark .preview-heading > span:last-child {
+  color: #b3c7ce;
+}
+body.theme-dark .preview-media {
+  background: #263943;
+}
+body.theme-dark .preview-icons {
+  color: #c8dadd;
+}
+body.theme-dark .preview-cta {
+  background: #263b46;
+}
+body.theme-dark .caption {
+  color: #dce9ed;
+}
+body.theme-dark .thumbnails button {
+  background: #22343e;
+  border-color: #405560;
+}
+body.theme-dark .thumbnails span {
+  background: #263943e8;
+  color: #edf7f8;
+}
+body.theme-dark .slide-arrow,
+body.theme-dark .enlarge {
+  background: #e2eef0e8;
+  color: #17323d;
+}
+body.theme-dark .details dd,
+body.theme-dark .comment p,
+body.theme-dark .history-event p,
+body.theme-dark .personal-preview-item strong,
+body.theme-dark .decision-receipt strong {
+  color: #e5f0f2;
+}
+body.theme-dark .detail-tabs button {
+  color: #b2c7cf;
+}
+body.theme-dark .detail-tabs button[aria-selected="true"] {
+  color: #8ed9df;
+}
+body.theme-dark .review-actions,
+body.theme-dark .comment-thread,
+body.theme-dark .history-event,
+body.theme-dark .comment {
+  border-color: #3b505b;
+}
+body.theme-dark .decision-receipt {
+  background: #223640;
+}
+body.theme-dark .personal-preview-item {
+  background: #1b3439;
+  border-color: #477276;
+}
+body.theme-dark .personal-preview-item:hover,
+body.theme-dark .personal-preview-item.selected {
+  background: #284a4d;
+  border-color: #73c2bb;
+}
+body.theme-dark .sync-state {
+  color: #9fe3c8;
+}
+body.theme-dark .script-panel pre {
+  color: #dce9ed;
+}
+body.theme-dark .upload-control,
+body.theme-dark .upload-control:hover {
+  background: #20343e;
+  border-color: #4b6873;
+  color: #dcecef;
+}
+body.theme-dark .error {
+  color: #ffb8bf;
+}
+body.theme-dark .success {
+  color: #a8e7c4;
+}
 .calendar .status,
 .calendar .platform {
   font-size: 0.75rem;
