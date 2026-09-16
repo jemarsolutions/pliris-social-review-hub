@@ -2206,6 +2206,66 @@ body.theme-dark .upload-control:hover {
   border-color: #4b6873;
   color: #dcecef;
 }
+body.theme-dark label {
+  color: #bcd0d8;
+}
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+  color: #8fa7b2;
+  opacity: 1;
+}
+body.theme-dark option {
+  background: #14212a;
+  color: #e8f0f3;
+}
+body.theme-dark .dialog-content > p,
+body.theme-dark .dialog-content > h2,
+body.theme-dark .dialog-content .stack > p,
+body.theme-dark .dialog-content .stack > small {
+  color: #b9ccd4;
+}
+body.theme-dark .dialog-content > h2 {
+  color: #edf5f7;
+}
+body.theme-dark .dialog-close:hover {
+  background: #3b5662;
+  color: #ffffff;
+}
+body.theme-dark .preview-column,
+body.theme-dark .decision-column,
+body.theme-dark .dialog-content {
+  scrollbar-color: #52717d #172630;
+  scrollbar-width: thin;
+}
+body.theme-dark .detail-tabs button:hover,
+body.theme-dark .detail-tabs button:focus-visible {
+  color: #e3f5f6;
+}
+body.theme-dark .review-actions p,
+body.theme-dark .review-actions small,
+body.theme-dark .personal-preview-panel > p:not(.eyebrow),
+body.theme-dark .decision-receipt small,
+body.theme-dark .comment-thread textarea + .button {
+  color: #b9ccd4;
+}
+body.theme-dark .details dt {
+  color: #a9c0c9;
+}
+body.theme-dark .details dd {
+  color: #e4eff2;
+}
+body.theme-dark .comment-thread textarea {
+  background: #14212a;
+  border-color: #48616e;
+  color: #e8f0f3;
+}
+body.theme-dark .comment-thread textarea:focus,
+body.theme-dark input:focus,
+body.theme-dark textarea:focus,
+body.theme-dark select:focus {
+  border-color: #78c9d3;
+  box-shadow: 0 0 0 2px #78c9d333;
+}
 body.theme-dark .error {
   color: #ffb8bf;
 }
