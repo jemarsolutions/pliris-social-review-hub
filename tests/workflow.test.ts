@@ -796,6 +796,38 @@ describe("Integrity and authorization", () => {
     expect(mixedMedia.status).toBe(422);
   });
   it("Producer can archive content while reviewer cannot delete it", async () => {
+    const royal = await call(
+      `content/${state.itemId}/platform-variants`,
+      "POST",
+      {
+        platform: "FACEBOOK",
+        contentFormat: "CAROUSEL",
+        publishingAccount: "PERSONAL",
+        publishingAccountName: "Royal · Facebook",
+        plannedPublishAt: new Date(Date.now() + 86400000).toISOString(),
+        caption: "Royal personal-account version of the main content.",
+        ctaText: "Explore",
+        ctaUrl: "https://example.com",
+        mediaIds: [state.media[0]],
+      },
+    );
+    expect(royal.status).toBe(201);
+    const grouped = await call("content");
+    const main = grouped.data.find(
+      (item: { id: string }) => item.id === state.itemId,
+    );
+    expect(main.variants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          publishingAccount: "PERSONAL",
+          publishingAccountName: "John · Facebook",
+        }),
+        expect.objectContaining({
+          publishingAccount: "PERSONAL",
+          publishingAccountName: "Royal · Facebook",
+        }),
+      ]),
+    );
     const forbidden = await call(
       `content/${state.itemId}`,
       "DELETE",

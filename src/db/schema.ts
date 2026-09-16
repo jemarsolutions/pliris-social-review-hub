@@ -129,10 +129,12 @@ export const platformVariants = pgTable(
     updatedAt: updated(),
   },
   (t) => [
-    uniqueIndex("one_platform_format_per_content").on(
+    uniqueIndex("one_destination_format_per_content").on(
       t.contentItemId,
       t.platform,
       t.contentFormat,
+      t.publishingAccount,
+      t.publishingAccountName,
     ),
   ],
 );

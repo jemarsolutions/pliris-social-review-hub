@@ -490,21 +490,7 @@ export function Hub({
                       </p>
                       <h3>{item.title}</h3>
                       <p>{item.conceptSummary}</p>
-                      <div className="actions">
-                        {item.variants.map((v) => (
-                          <Button
-                            key={v.id}
-                            variant="outline"
-                            onClick={() => open(item, v)}
-                          >
-                            <Platform value={v.platform} />
-                            <span className="format-badge">
-                              {label(v.contentFormat)}
-                            </span>
-                            <Status value={v.reviewStatus} />
-                          </Button>
-                        ))}
-                      </div>
+                      <ContentAdaptations item={item} open={open} />
                     </div>
                     <div className="actions">
                       <Button
@@ -765,6 +751,49 @@ function ReviewCard({
         </div>
       </div>
     </button>
+  );
+}
+function ContentAdaptations({
+  item,
+  open,
+}: {
+  item: Item;
+  open: (item: Item, variant: Variant) => void;
+}) {
+  const company = item.variants.filter(
+    (variant) => variant.publishingAccount === "PLIRIS",
+  );
+  const personal = item.variants.filter(
+    (variant) => variant.publishingAccount === "PERSONAL",
+  );
+  const render = (variants: Variant[]) => (
+    <div className="actions">
+      {variants.map((v) => (
+        <Button
+          key={v.id}
+          variant="outline"
+          onClick={() => open(item, v)}
+        >
+          <Platform value={v.platform} />
+          <span className="format-badge">{label(v.contentFormat)}</span>
+          <Status value={v.reviewStatus} />
+        </Button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="content-adaptations">
+      <div>
+        <p className="adaptation-label">PLIRIS SOCIAL</p>
+        {render(company)}
+      </div>
+      {personal.length > 0 && (
+        <div className="personal-adaptations">
+          <p className="adaptation-label">PERSONAL ACCOUNTS</p>
+          {render(personal)}
+        </div>
+      )}
+    </div>
   );
 }
 function ContentForm({

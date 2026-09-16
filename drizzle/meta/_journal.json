@@ -36,6 +36,13 @@
       "when": 1789555200000,
       "tag": "0004_publishing_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789641600000,
+      "tag": "0005_destination_variant_uniqueness",
+      "breakpoints": true
     }
   ]
 }

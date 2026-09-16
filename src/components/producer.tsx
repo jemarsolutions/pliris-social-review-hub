@@ -46,13 +46,7 @@ export function Editor({
   onDone: () => Promise<void>;
 }) {
   const availableFormats = (platform: Platform) =>
-    formatsByPlatform[platform].filter(
-      (format) =>
-        !item.variants.some(
-          (existing) =>
-            existing.platform === platform && existing.contentFormat === format,
-        ),
-    );
+    formatsByPlatform[platform];
   const firstPlatform =
     platformValues.find((candidate) => availableFormats(candidate).length) ||
     "INSTAGRAM";
