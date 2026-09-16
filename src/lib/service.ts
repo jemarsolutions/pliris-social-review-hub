@@ -782,7 +782,11 @@ export async function dashboard() {
         .length,
       revisions: canonical.filter((v) => v.reviewStatus === "CHANGES_REQUESTED")
         .length,
-      approved: canonical.filter((v) => v.reviewStatus === "APPROVED").length,
+      approved: canonical.filter(
+        (v) =>
+          v.reviewStatus === "APPROVED" &&
+          !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus),
+      ).length,
       upcoming: canonical.filter(
         (v) => new Date(v.plannedPublishAt) >= new Date(),
       ).length,

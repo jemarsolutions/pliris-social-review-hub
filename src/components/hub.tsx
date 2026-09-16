@@ -20,7 +20,6 @@ import {
   BriefcaseBusiness,
   Music2,
   Video,
-  Send,
   Clock3,
   Moon,
   Sun,
@@ -44,7 +43,6 @@ const nav = [
   ["Approved", CheckCheck],
   ["Revisions", RotateCcw],
   ["Archive", Archive],
-  ["Publishing", Send],
   ["Scheduled", Clock3],
 ] as const;
 export const label = (v: string) =>
@@ -155,10 +153,6 @@ export function Hub({
           !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
         : view === "Revisions"
           ? v.reviewStatus === "CHANGES_REQUESTED"
-          : view === "Publishing"
-            ? v.publishingAccount === "PLIRIS" &&
-              ["READY_FOR_REVIEW", "APPROVED"].includes(v.reviewStatus) &&
-              !["SCHEDULED", "PUBLISHED"].includes(v.publishingStatus)
           : view === "Scheduled"
             ? v.publishingAccount === "PLIRIS" &&
               v.publishingStatus === "SCHEDULED"
@@ -177,7 +171,7 @@ export function Hub({
         return groups;
       }, new Map<string, { item: Item; variant: Variant }[]>()),
   ).sort(([a], [b]) => a.localeCompare(b));
-  const publishingGroups = Array.from(
+  const scheduledGroups = Array.from(
     visible.reduce((groups, entry) => {
       const key = entry.variant.plannedPublishAt.slice(0, 10);
       const group = groups.get(key) || [];
@@ -303,8 +297,6 @@ export function Hub({
                         ? "Feedback to carry into the next version."
                         : view === "Calendar"
                           ? "A week of content, with every platform accounted for."
-                          : view === "Publishing"
-                            ? "Choose the destination account, then review every platform adaptation by publish date."
                           : view === "Scheduled"
                             ? "Content already scheduled for an external social account."
                           : view === "Archive"
@@ -382,10 +374,8 @@ export function Hub({
                     ? `${data.items.length} content ideas`
                     : view === "Review queue"
                       ? `${reviewGroups.length} content groups`
-                      : view === "Publishing"
-                        ? `${visible.length} destination cards`
-                          : view === "Scheduled"
-                            ? `${visible.length} scheduled cards`
+                      : view === "Scheduled"
+                        ? `${visible.length} scheduled cards`
                     : `${visible.length} platform adaptations`}
             </h2>
             {view === "Dashboard" ? (
@@ -566,7 +556,6 @@ export function Hub({
             <div
               className={
                 view === "Review queue" ||
-                view === "Publishing" ||
                 view === "Scheduled"
                   ? "review-groups"
                   : "review-grid"
@@ -594,8 +583,8 @@ export function Hub({
                       </div>
                     </section>,
                   ])
-                : view === "Publishing" || view === "Scheduled"
-                  ? publishingGroups.flatMap(([dateKey, entries]) => [
+                : view === "Scheduled"
+                  ? scheduledGroups.flatMap(([dateKey, entries]) => [
                       <section className="review-group" key={dateKey}>
                         <header className="review-group-heading">
                           <div>
@@ -773,10 +762,6 @@ function ReviewCard({
         </div>
         <h3>{item.title}</h3>
         <p>{formatDate(v.plannedPublishAt, true)}</p>
-        <p className="destination-label">
-          {v.publishingAccount === "PERSONAL" ? "Personal · " : "PLIRIS · "}
-          {v.publishingAccountName}
-        </p>
         <div className="card-footer">
           <Status value={v.reviewStatus} />
           <ArrowUpRight size={18} />
