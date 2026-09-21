@@ -43,10 +43,12 @@ const nav = [
   ["Scheduled", Clock3],
 ] as const;
 export const label = (v: string) =>
-  v
-    .toLowerCase()
-    .replaceAll("_", " ")
-    .replace(/^./, (v) => v.toUpperCase());
+  v === "CHANGES_REQUESTED"
+    ? "Needs revision"
+    : v
+        .toLowerCase()
+        .replaceAll("_", " ")
+        .replace(/^./, (v) => v.toUpperCase());
 export function Status({ value }: { value: string }) {
   return (
     <span className={`status status-${value.toLowerCase()}`}>
@@ -345,7 +347,7 @@ export function Hub({
               <div className="metrics">
                 {[
                   ["Needs your review", data.counts.review, "Review queue"],
-                  ["Changes requested", data.counts.revisions, "Revisions"],
+                  ["Needs revision", data.counts.revisions, "Revisions"],
                   ["Approved", data.counts.approved, "Approved"],
                 ].map(([name, count, target]) => (
                   <button
