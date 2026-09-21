@@ -229,7 +229,10 @@ export async function updateContent(
       .set({ ...editableData, updatedAt: new Date() })
       .where(eq(s.contentItems.id, contentId))
       .returning();
-    if (data.contentDate && data.contentDate !== item.contentDate) {
+    // The content date is the source of truth for the whole content group.
+    // Run this reconciliation even when the date value itself is unchanged so
+    // older groups with mismatched adaptation dates can be repaired by saving.
+    if (data.contentDate) {
       const variants = await tx
         .select({
           id: s.platformVariants.id,
@@ -253,9 +256,7 @@ export async function updateContent(
     }
     await audit(tx, actor, "CONTENT_UPDATED", contentId, {
       fields: Object.keys(data),
-      ...(data.contentDate && data.contentDate !== item.contentDate
-        ? { synchronizedVariantDates: true }
-        : {}),
+      ...(data.contentDate ? { synchronizedVariantDates: true } : {}),
     });
     return updated;
   });
