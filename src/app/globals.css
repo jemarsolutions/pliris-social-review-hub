@@ -784,6 +784,10 @@ body.theme-dark .platform-tiktok svg {
   color: #455cac;
   background: #ecefff;
 }
+.status-scheduled {
+  color: #166b72;
+  background: #e3f5f3;
+}
 .filters {
   display: flex;
   gap: 12px;
@@ -2127,6 +2131,10 @@ body.theme-dark .status-rejected {
 body.theme-dark .status-published {
   color: #c9d6ff;
   background: #334276;
+}
+body.theme-dark .status-scheduled {
+  color: #b9efeb;
+  background: #245358;
 }
 body.theme-dark .dialog-close {
   background: #2c414d;

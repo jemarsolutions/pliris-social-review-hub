@@ -27,7 +27,7 @@ import {
   type History,
   type Version,
 } from "./types";
-import { Platform, Status, formatDate, label } from "./hub";
+import { effectiveStatus, Platform, Status, formatDate, label } from "./hub";
 export function Review({
   item,
   variant,
@@ -78,6 +78,10 @@ export function Review({
   const previewIsVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(
     previewVariant.contentFormat,
   );
+  const publishedRecord = history?.publishing
+    .slice()
+    .reverse()
+    .find((record) => record.status === "PUBLISHED");
   const personalVariants = item.variants.filter(
     (candidate) =>
       variant.publishingAccount === "PLIRIS" &&
@@ -273,7 +277,7 @@ export function Review({
           <Status
             value={
               current
-                ? variant.reviewStatus
+                ? effectiveStatus(variant)
                 : decision?.decision.decision || "DRAFT"
             }
           />
@@ -429,6 +433,21 @@ export function Review({
                   </dd>
                 </div>
               )}
+              {publishedRecord?.publishedUrl && (
+                <div>
+                  <dt>Published post</dt>
+                  <dd>
+                    <a
+                      href={publishedRecord.publishedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {publishedRecord.publishedUrl}
+                      <ExternalLink size={14} />
+                    </a>
+                  </dd>
+                </div>
+              )}
             </dl>
             {decision && (
               <div className="decision-receipt">
@@ -538,7 +557,7 @@ export function Review({
                 {variant.publishingStatus === "PUBLISHED" && (
                   <small>
                     This version is already recorded as published. Find it in
-                    Archive or review its publication history.
+                    Published or review its publication history.
                   </small>
                 )}
                 <small>

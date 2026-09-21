@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCheck,
   RotateCcw,
-  Archive,
   Plus,
   LogOut,
   Trash2,
@@ -45,7 +44,7 @@ const nav = [
   ["Calendar", CalendarDays],
   ["Approved", CheckCheck],
   ["Revisions", RotateCcw],
-  ["Archive", Archive],
+  ["Published", CheckCheck],
   ["Scheduled", Clock3],
 ] as const;
 export const label = (v: string) =>
@@ -59,6 +58,11 @@ export function Status({ value }: { value: string }) {
       {label(value)}
     </span>
   );
+}
+export function effectiveStatus(variant: Variant) {
+  return ["PUBLISHED", "SCHEDULED"].includes(variant.publishingStatus)
+    ? variant.publishingStatus
+    : variant.reviewStatus;
 }
 export function Platform({ value }: { value: string }) {
   const Icon =
@@ -159,7 +163,7 @@ export function Hub({
           : view === "Scheduled"
             ? v.publishingAccount === "PLIRIS" &&
               v.publishingStatus === "SCHEDULED"
-          : view === "Archive"
+          : view === "Published"
             ? v.publishingStatus === "PUBLISHED"
             : true,
   );
@@ -302,7 +306,7 @@ export function Hub({
                           ? "A week of content, with every platform accounted for."
                           : view === "Scheduled"
                             ? "Content already scheduled for an external social account."
-                          : view === "Archive"
+                          : view === "Published"
                             ? "Manually recorded published content."
                             : "Create content ideas and their platform adaptations."}
               </p>
@@ -491,7 +495,7 @@ export function Hub({
                         >
                           <Platform value={variant.platform} />
                           <strong>{item.title}</strong>
-                          <Status value={variant.reviewStatus} />
+                          <Status value={effectiveStatus(variant)} />
                         </button>
                       ))}
                   </section>
@@ -766,7 +770,7 @@ function ReviewCard({
         <h3>{item.title}</h3>
         <p>{formatDate(v.plannedPublishAt, true)}</p>
         <div className="card-footer">
-          <Status value={v.reviewStatus} />
+          <Status value={effectiveStatus(v)} />
           <ArrowUpRight size={18} />
         </div>
       </div>
@@ -796,7 +800,7 @@ function ContentAdaptations({
     >
       <Platform value={variant.platform} />
       <span className="format-badge">{label(variant.contentFormat)}</span>
-      <Status value={variant.reviewStatus} />
+      <Status value={effectiveStatus(variant)} />
     </Button>
   );
   return (
