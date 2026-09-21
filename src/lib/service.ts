@@ -238,20 +238,18 @@ export async function updateContent(
         .from(s.platformVariants)
         .where(eq(s.platformVariants.contentItemId, contentId));
       const nextDate = new Date(`${data.contentDate}T00:00:00.000Z`);
-      await Promise.all(
-        variants.map(({ id: variantId, plannedPublishAt }) => {
-          const nextPlannedDate = new Date(plannedPublishAt);
-          nextPlannedDate.setUTCFullYear(
-            nextDate.getUTCFullYear(),
-            nextDate.getUTCMonth(),
-            nextDate.getUTCDate(),
-          );
-          return tx
-            .update(s.platformVariants)
-            .set({ plannedPublishAt: nextPlannedDate, updatedAt: new Date() })
-            .where(eq(s.platformVariants.id, variantId));
-        }),
-      );
+      for (const { id: variantId, plannedPublishAt } of variants) {
+        const nextPlannedDate = new Date(plannedPublishAt);
+        nextPlannedDate.setUTCFullYear(
+          nextDate.getUTCFullYear(),
+          nextDate.getUTCMonth(),
+          nextDate.getUTCDate(),
+        );
+        await tx
+          .update(s.platformVariants)
+          .set({ plannedPublishAt: nextPlannedDate, updatedAt: new Date() })
+          .where(eq(s.platformVariants.id, variantId));
+      }
     }
     await audit(tx, actor, "CONTENT_UPDATED", contentId, {
       fields: Object.keys(data),
