@@ -19,12 +19,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
-import {
-  SiFacebook,
-  SiInstagram,
-  SiTiktok,
-  SiYoutube,
-} from "react-icons/si";
+import { SiFacebook, SiInstagram, SiTiktok, SiYoutube } from "react-icons/si";
 import { FaLinkedin } from "react-icons/fa6";
 import { platformValues } from "@/lib/platform-config";
 import { Button } from "./ui/button";
@@ -153,7 +148,8 @@ export function Hub({
   );
   const visible = filtered.filter(({ variant: v }) =>
     view === "Dashboard" || view === "Review queue"
-      ? v.publishingAccount === "PLIRIS" && v.reviewStatus === "READY_FOR_REVIEW"
+      ? v.publishingAccount === "PLIRIS" &&
+        v.reviewStatus === "READY_FOR_REVIEW"
       : view === "Approved"
         ? v.publishingAccount === "PLIRIS" &&
           v.reviewStatus === "APPROVED" &&
@@ -163,9 +159,9 @@ export function Hub({
           : view === "Scheduled"
             ? v.publishingAccount === "PLIRIS" &&
               v.publishingStatus === "SCHEDULED"
-          : view === "Published"
-            ? v.publishingStatus === "PUBLISHED"
-            : true,
+            : view === "Published"
+              ? v.publishingStatus === "PUBLISHED"
+              : true,
   );
   const reviewGroups = Array.from(
     visible
@@ -187,6 +183,23 @@ export function Hub({
       return groups;
     }, new Map<string, { item: Item; variant: Variant }[]>()),
   ).sort(([a], [b]) => a.localeCompare(b));
+  const publishedGroups = Array.from(
+    visible.reduce((groups, entry) => {
+      const group = groups.get(entry.item.id) || [];
+      group.push(entry);
+      groups.set(entry.item.id, group);
+      return groups;
+    }, new Map<string, { item: Item; variant: Variant }[]>()),
+  ).sort(([, a], [, b]) =>
+    a[0].item.contentDate.localeCompare(b[0].item.contentDate),
+  );
+  const activeContentItems = data.items.filter(
+    (item) =>
+      item.variants.some(
+        (variant) => variant.publishingStatus !== "PUBLISHED",
+      ) &&
+      (!query || item.title.toLowerCase().includes(query.toLowerCase())),
+  );
   const monday = new Date();
   monday.setUTCHours(0, 0, 0, 0);
   monday.setUTCDate(
@@ -270,7 +283,9 @@ export function Hub({
             <button
               className={`theme-toggle ${themeReady ? "" : "theme-pending"}`}
               type="button"
-              aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={
+                darkMode ? "Switch to light mode" : "Switch to dark mode"
+              }
               title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
               onClick={toggleTheme}
             >
@@ -306,9 +321,9 @@ export function Hub({
                           ? "A week of content, with every platform accounted for."
                           : view === "Scheduled"
                             ? "Content already scheduled for an external social account."
-                          : view === "Published"
-                            ? "Manually recorded published content."
-                            : "Create content ideas and their platform adaptations."}
+                            : view === "Published"
+                              ? "Manually recorded published content."
+                              : "Create content ideas and their platform adaptations."}
               </p>
             </div>
             {producer && (
@@ -344,7 +359,9 @@ export function Hub({
               </div>
               <section className="coverage">
                 <div>
-                  <p className="eyebrow">APPROVAL COVERAGE THROUGH NEXT 7 DAYS</p>
+                  <p className="eyebrow">
+                    APPROVAL COVERAGE THROUGH NEXT 7 DAYS
+                  </p>
                   <h2>
                     {data.coverage.approved}{" "}
                     <span>of {data.coverage.total} adaptations approved</span>
@@ -378,12 +395,12 @@ export function Hub({
                 : view === "Calendar"
                   ? `${formatDate(days[0].toISOString())} – ${formatDate(days[6].toISOString())}`
                   : view === "Content"
-                    ? `${data.items.length} content ideas`
+                    ? `${activeContentItems.length} active content ideas`
                     : view === "Review queue"
                       ? `${reviewGroups.length} content groups`
                       : view === "Scheduled"
                         ? `${visible.length} scheduled cards`
-                    : `${visible.length} platform adaptations`}
+                        : `${visible.length} platform adaptations`}
             </h2>
             {view === "Dashboard" ? (
               <Button variant="ghost" onClick={() => setView("Review queue")}>
@@ -504,71 +521,65 @@ export function Hub({
             </div>
           ) : view === "Content" ? (
             <div className="content-list">
-              {data.items
-                .filter(
-                  (i) =>
-                    !query ||
-                    i.title.toLowerCase().includes(query.toLowerCase()),
-                )
-                .map((item) => (
-                  <article className="content-item" key={item.id}>
-                    <div>
-                      <p className="eyebrow">
-                        {item.internalReference} ·{" "}
-                        {formatDate(item.contentDate)}
-                      </p>
-                      <h3>{item.title}</h3>
-                      <p>{item.conceptSummary}</p>
-                      <ContentAdaptations item={item} open={open} />
-                    </div>
-                    <div className="actions">
-                      <Button
-                        variant="ghost"
-                        onClick={() => setEditing({ item })}
-                      >
-                        <Plus size={16} />
-                        Add adaptation
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setMetadataItem(item)}
-                      >
-                        Edit idea details
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={async () => {
-                          if (
-                            !window.confirm(
-                              "Archive this content? It will disappear from active views while its saved history remains preserved.",
-                            )
+              {activeContentItems.map((item) => (
+                <article className="content-item" key={item.id}>
+                  <div>
+                    <p className="eyebrow">
+                      {item.internalReference} · {formatDate(item.contentDate)}
+                    </p>
+                    <h3>{item.title}</h3>
+                    <p>{item.conceptSummary}</p>
+                    <ContentAdaptations item={item} open={open} />
+                  </div>
+                  <div className="actions">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setEditing({ item })}
+                    >
+                      <Plus size={16} />
+                      Add adaptation
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setMetadataItem(item)}
+                    >
+                      Edit idea details
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            "Archive this content? It will disappear from active views while its saved history remains preserved.",
                           )
-                            return;
-                          try {
-                            await api(`content/${item.id}`, "DELETE");
-                            await refresh();
-                          } catch (e) {
-                            setError((e as Error).message);
-                          }
-                        }}
-                      >
-                        <Trash2 size={16} />
-                        Delete content
-                      </Button>
-                    </div>
-                  </article>
-                ))}
+                        )
+                          return;
+                        try {
+                          await api(`content/${item.id}`, "DELETE");
+                          await refresh();
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      Delete content
+                    </Button>
+                  </div>
+                </article>
+              ))}
             </div>
           ) : (
             <div
               className={
                 view === "Review queue" ||
-                view === "Scheduled"
+                view === "Scheduled" ||
+                view === "Published"
                   ? "review-groups"
                   : "review-grid"
               }
             >
-              {(view === "Review queue"
+              {view === "Review queue"
                 ? reviewGroups.flatMap(([dateKey, entries]) => [
                     <section className="review-group" key={dateKey}>
                       <header className="review-group-heading">
@@ -612,16 +623,49 @@ export function Hub({
                         </div>
                       </section>,
                     ])
-                : (view === "Dashboard" ? visible.slice(0, 6) : visible).map(
-                    ({ item, variant: v }) => (
-                      <ReviewCard
-                        key={v.id}
-                        item={item}
-                        variant={v}
-                        open={open}
-                      />
-                    ),
-                  ))}
+                  : view === "Published"
+                    ? publishedGroups.flatMap(([itemId, entries]) => {
+                        const item = entries[0].item;
+                        return [
+                          <section className="review-group" key={itemId}>
+                            <header className="review-group-heading">
+                              <div>
+                                <p className="eyebrow">CONTENT GROUP</p>
+                                <h3>{item.title}</h3>
+                                <p>
+                                  {item.internalReference} ·{" "}
+                                  {formatDate(item.contentDate, true)}
+                                </p>
+                              </div>
+                              <span>
+                                {entries.length} published{" "}
+                                {entries.length === 1 ? "post" : "posts"}
+                              </span>
+                            </header>
+                            <div className="review-grid">
+                              {entries.map(({ variant: v }) => (
+                                <ReviewCard
+                                  key={v.id}
+                                  item={item}
+                                  variant={v}
+                                  open={open}
+                                />
+                              ))}
+                            </div>
+                          </section>,
+                        ];
+                      })
+                    : (view === "Dashboard"
+                        ? visible.slice(0, 6)
+                        : visible
+                      ).map(({ item, variant: v }) => (
+                        <ReviewCard
+                          key={v.id}
+                          item={item}
+                          variant={v}
+                          open={open}
+                        />
+                      ))}
             </div>
           )}
           {!visible.length && !["Content", "Calendar"].includes(view) && (
@@ -741,10 +785,7 @@ function ReviewCard({
   open: (item: Item, variant: Variant) => void;
 }) {
   return (
-    <button
-      className="review-card"
-      onClick={() => open(item, v)}
-    >
+    <button className="review-card" onClick={() => open(item, v)}>
       <div className="card-media">
         {v.version.thumbnail || v.version.media[0] ? (
           <img
