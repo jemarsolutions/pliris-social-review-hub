@@ -196,7 +196,9 @@ export function Hub({
   const activeContentItems = data.items.filter(
     (item) =>
       item.variants.some(
-        (variant) => variant.publishingStatus !== "PUBLISHED",
+        (variant) =>
+          variant.publishingAccount === "PLIRIS" &&
+          variant.publishingStatus !== "PUBLISHED",
       ) &&
       (!query || item.title.toLowerCase().includes(query.toLowerCase())),
   );
