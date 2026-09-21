@@ -189,7 +189,9 @@ export async function createContent(actor: Actor, input: unknown) {
   const data = contentSchema.parse(input);
   return getDb().transaction(async (tx) => {
     const referenceResult = await tx.execute(
-      sql<{ nextval: string }>`SELECT nextval('content_reference_seq') AS nextval`,
+      sql<{
+        nextval: string;
+      }>`SELECT nextval('content_reference_seq') AS nextval`,
     );
     const [{ nextval }] = referenceResult.rows as [{ nextval: string }];
     const internalReference = `PLIRIS-${String(nextval).padStart(4, "0")}`;
@@ -227,8 +229,35 @@ export async function updateContent(
       .set({ ...editableData, updatedAt: new Date() })
       .where(eq(s.contentItems.id, contentId))
       .returning();
+    if (data.contentDate && data.contentDate !== item.contentDate) {
+      const variants = await tx
+        .select({
+          id: s.platformVariants.id,
+          plannedPublishAt: s.platformVariants.plannedPublishAt,
+        })
+        .from(s.platformVariants)
+        .where(eq(s.platformVariants.contentItemId, contentId));
+      const nextDate = new Date(`${data.contentDate}T00:00:00.000Z`);
+      await Promise.all(
+        variants.map(({ id: variantId, plannedPublishAt }) => {
+          const nextPlannedDate = new Date(plannedPublishAt);
+          nextPlannedDate.setUTCFullYear(
+            nextDate.getUTCFullYear(),
+            nextDate.getUTCMonth(),
+            nextDate.getUTCDate(),
+          );
+          return tx
+            .update(s.platformVariants)
+            .set({ plannedPublishAt: nextPlannedDate, updatedAt: new Date() })
+            .where(eq(s.platformVariants.id, variantId));
+        }),
+      );
+    }
     await audit(tx, actor, "CONTENT_UPDATED", contentId, {
       fields: Object.keys(data),
+      ...(data.contentDate && data.contentDate !== item.contentDate
+        ? { synchronizedVariantDates: true }
+        : {}),
     });
     return updated;
   });
@@ -327,8 +356,7 @@ export async function editVariant(
     const v = await lock(tx, variantId);
     requireVersion(v.currentVersionId, data.expectedVersionId);
     assertPayloadShape(v.platform, v.contentFormat, data);
-    const publishingAccount =
-      data.publishingAccount || v.publishingAccount;
+    const publishingAccount = data.publishingAccount || v.publishingAccount;
     const publishingAccountName =
       data.publishingAccountName || v.publishingAccountName;
     const [previous] = await tx
@@ -355,7 +383,11 @@ export async function editVariant(
         return v;
       const [updated] = await tx
         .update(s.platformVariants)
-        .set({ publishingAccount, publishingAccountName, updatedAt: new Date() })
+        .set({
+          publishingAccount,
+          publishingAccountName,
+          updatedAt: new Date(),
+        })
         .where(eq(s.platformVariants.id, variantId))
         .returning();
       await audit(tx, actor, "PUBLISHING_ACCOUNT_CHANGED", variantId, {
@@ -610,15 +642,9 @@ export async function recordPublishing(
         "Personal mirrors follow the PLIRIS publishing workflow and cannot be scheduled or published independently.",
       );
     if (v.publishingStatus === "PUBLISHED")
-      throw new AppError(
-        409,
-        "This version is already recorded as published.",
-      );
+      throw new AppError(409, "This version is already recorded as published.");
     if (v.publishingStatus === "SCHEDULED" && data.status === "SCHEDULED")
-      throw new AppError(
-        409,
-        "This version is already recorded as scheduled.",
-      );
+      throw new AppError(409, "This version is already recorded as scheduled.");
     if (data.status !== "UNSCHEDULED" && v.reviewStatus !== "APPROVED")
       throw new AppError(409, "Current version must be approved first.");
     if (data.status === "SCHEDULED" && !data.scheduledAt)
@@ -689,7 +715,10 @@ export async function planVariant(
       for (const personal of personalMirrors) {
         await tx
           .update(s.platformVariants)
-          .set({ plannedPublishAt: new Date(plannedPublishAt), updatedAt: new Date() })
+          .set({
+            plannedPublishAt: new Date(plannedPublishAt),
+            updatedAt: new Date(),
+          })
           .where(eq(s.platformVariants.id, personal.id));
         await audit(tx, actor, "PERSONAL_MIRROR_PLAN_SYNCED", personal.id, {
           sourceVariantId: variantId,
