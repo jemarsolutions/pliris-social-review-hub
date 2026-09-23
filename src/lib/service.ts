@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { getDb, type Transaction } from "@/db";
 import * as s from "@/db/schema";
@@ -18,6 +19,7 @@ import {
   publishingSchema,
   dateSchema,
   decisionSchema,
+  wcsPostSchema,
 } from "./validation";
 import type { ContentFormatValue, PlatformValue } from "./platform-config";
 const id = () => crypto.randomUUID();
@@ -207,6 +209,119 @@ export async function createContent(actor: Actor, input: unknown) {
     await audit(tx, actor, "CONTENT_CREATED", item.id);
     return item;
   });
+}
+
+export async function upsertWcsPost(actor: Actor, input: unknown) {
+  requireProducer(actor);
+  if (!actor.integration)
+    throw new AppError(403, "Integration authentication required.");
+  const data = wcsPostSchema.parse(input);
+  const payloadHash = createHash("sha256")
+    .update(JSON.stringify(data))
+    .digest("hex");
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(s.externalContentLinks)
+    .where(
+      and(
+        eq(s.externalContentLinks.source, "WCS"),
+        eq(s.externalContentLinks.externalId, data.contentId),
+      ),
+    );
+
+  if (existing?.lastPayloadHash === payloadHash) {
+    const [variant] = await db
+      .select()
+      .from(s.platformVariants)
+      .where(eq(s.platformVariants.id, existing.platformVariantId));
+    return { action: "UNCHANGED", contentId: existing.contentItemId, variant };
+  }
+
+  const contentInput = {
+    title: data.title,
+    contentDate: data.contentDate,
+    campaign: data.campaign,
+    conceptSummary: data.conceptSummary,
+  };
+  const variantInput = {
+    platform: data.platform,
+    contentFormat: data.contentFormat,
+    plannedPublishAt: data.plannedPublishAt,
+    publishingAccount: "PLIRIS" as const,
+    publishingAccountName: data.publishingAccountName,
+    caption: data.caption,
+    headline: data.headline,
+    script: data.script,
+    chapters: data.chapters,
+    tags: data.tags,
+    ctaText: data.ctaText,
+    ctaUrl: data.ctaUrl,
+    mediaIds: data.mediaIds,
+    videoId: data.videoId,
+    thumbnailId: data.thumbnailId,
+  };
+
+  if (!existing) {
+    const content = await createContent(actor, contentInput);
+    const variant = await createVariant(actor, content.id, variantInput);
+    const finalVariant = data.submitForReview
+      ? await submitReview(actor, variant.id, variant.currentVersionId!)
+      : variant;
+    await db.insert(s.externalContentLinks).values({
+      id: id(),
+      source: "WCS",
+      externalId: data.contentId,
+      contentItemId: content.id,
+      platformVariantId: variant.id,
+      lastPayloadHash: payloadHash,
+    });
+    return { action: "CREATED", contentId: content.id, variant: finalVariant };
+  }
+
+  const [current] = await db
+    .select({ variant: s.platformVariants, version: s.versions })
+    .from(s.platformVariants)
+    .innerJoin(
+      s.versions,
+      eq(s.platformVariants.currentVersionId, s.versions.id),
+    )
+    .where(eq(s.platformVariants.id, existing.platformVariantId));
+  if (!current) throw new AppError(409, "Linked WCS post is unavailable.");
+  if (
+    current.variant.platform !== data.platform ||
+    current.variant.contentFormat !== data.contentFormat
+  )
+    throw new AppError(
+      409,
+      "Platform and format cannot change for an existing WCS Content ID.",
+    );
+
+  await updateContent(actor, existing.contentItemId, contentInput);
+  let variant = await editVariant(actor, existing.platformVariantId, {
+    expectedVersionId: current.variant.currentVersionId!,
+    caption: data.caption,
+    headline: data.headline,
+    script: data.script,
+    chapters: data.chapters,
+    tags: data.tags,
+    ctaText: data.ctaText,
+    ctaUrl: data.ctaUrl,
+    mediaIds: data.mediaIds,
+    videoId: data.videoId,
+    thumbnailId: data.thumbnailId,
+    publishingAccount: "PLIRIS",
+    publishingAccountName: data.publishingAccountName,
+  });
+  if (variant.plannedPublishAt.toISOString() !== data.plannedPublishAt)
+    variant = await planVariant(actor, variant.id, data.plannedPublishAt);
+  if (data.submitForReview && variant.reviewStatus !== "READY_FOR_REVIEW")
+    variant = await submitReview(actor, variant.id, variant.currentVersionId!);
+  await db
+    .update(s.externalContentLinks)
+    .set({ lastPayloadHash: payloadHash, updatedAt: new Date() })
+    .where(eq(s.externalContentLinks.id, existing.id));
+  return { action: "UPDATED", contentId: existing.contentItemId, variant };
 }
 export async function updateContent(
   actor: Actor,

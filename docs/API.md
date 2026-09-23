@@ -35,6 +35,7 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
 | POST   | `/media`                                  | Producer multipart image upload; local demo also accepts small videos      |
 | POST   | `/media/sign-upload`                      | Producer requests a signed direct Cloudinary video upload                  |
 | POST   | `/media/complete-video`                   | Producer verifies and records a completed Cloudinary video                 |
+| POST   | `/integrations/wcs/posts`                 | Scoped AI HQ key creates or revises one WCS post idempotently              |
 
 Media is read through authenticated `GET /api/media/:id`; append `?thumb=1` for an image thumbnail or video poster. Image payloads are streamed, while authorized production video requests redirect to authenticated Cloudinary delivery. Ordered `version.media`, `version.video` and `version.thumbnail` entries contain immutable metadata snapshots.
 
@@ -47,6 +48,46 @@ Supported platform/format combinations:
 | LinkedIn  | Image post, carousel, long video              |
 | YouTube   | Short video, long video                       |
 | TikTok    | Short video                                   |
+
+## WCS AI HQ upsert
+
+`POST /api/v1/integrations/wcs/posts` is the preferred entrypoint for an AI HQ
+that already reads the PLIRIS WCS. It requires the server-to-server bearer key;
+browser sessions are rejected. `contentId` is the stable WCS identifier. Sending
+the same payload again returns `UNCHANGED`; changing the payload creates an
+immutable Hub version and returns `UPDATED` rather than duplicating the post.
+
+```json
+{
+  "contentId": "CAL-008",
+  "title": "WCS working topic",
+  "contentDate": "2026-09-24",
+  "campaign": "WCS",
+  "conceptSummary": "Optional production context",
+  "platform": "INSTAGRAM",
+  "contentFormat": "CAROUSEL",
+  "plannedPublishAt": "2026-09-24T16:00:00.000Z",
+  "publishingAccountName": "@pliris_plans",
+  "caption": "Exact caption for review",
+  "headline": "",
+  "script": "",
+  "chapters": "",
+  "tags": "",
+  "ctaText": "Learn more",
+  "ctaUrl": "https://plirisco.com/",
+  "mediaIds": ["uploaded-media-id-1", "uploaded-media-id-2"],
+  "videoId": null,
+  "thumbnailId": null,
+  "submitForReview": true
+}
+```
+
+Upload media first through `/media`, or use the signed video-upload flow, and
+then supply the returned IDs. `submitForReview: false` permits an incomplete
+draft. When it is `true`, the endpoint enforces the same image, video, YouTube,
+and thumbnail requirements as the normal review workflow. Platform or format
+changes for an existing WCS Content ID are rejected to prevent accidental
+cross-destination replacement.
 
 ## Payloads
 

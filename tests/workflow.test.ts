@@ -146,7 +146,8 @@ describe("Required three-platform workflow through authenticated API", () => {
     expect(grouped.data[0].variants).toHaveLength(9);
     expect(
       grouped.data[0].variants.filter(
-        (v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL",
+        (v: { publishingAccount: string }) =>
+          v.publishingAccount === "PERSONAL",
       ),
     ).toHaveLength(6);
     const linkedinMirrors = grouped.data[0].variants.filter(
@@ -162,11 +163,9 @@ describe("Required three-platform workflow through authenticated API", () => {
     const plannedDate = new Date(Date.now() + 3 * 86400000).toISOString();
     expect(
       (
-        await call(
-          `platform-variants/${state.ids.LINKEDIN}/plan`,
-          "POST",
-          { plannedPublishAt: plannedDate },
-        )
+        await call(`platform-variants/${state.ids.LINKEDIN}/plan`, "POST", {
+          plannedPublishAt: plannedDate,
+        })
       ).status,
     ).toBe(201);
     const afterPlan = await call("content");
@@ -175,13 +174,15 @@ describe("Required three-platform workflow through authenticated API", () => {
     );
     expect(
       linkedInVariants.every(
-        (v: { plannedPublishAt: string }) =>
-          v.plannedPublishAt === plannedDate,
+        (v: { plannedPublishAt: string }) => v.plannedPublishAt === plannedDate,
       ),
     ).toBe(true);
     expect(
       linkedInVariants
-        .filter((v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL")
+        .filter(
+          (v: { publishingAccount: string }) =>
+            v.publishingAccount === "PERSONAL",
+        )
         .map((v: { reviewStatus: string; publishingStatus: string }) => ({
           reviewStatus: v.reviewStatus,
           publishingStatus: v.publishingStatus,
@@ -211,7 +212,10 @@ describe("Required three-platform workflow through authenticated API", () => {
           await call(
             `platform-variants/${personalLinkedIn.id}/publishing`,
             "POST",
-            { expectedVersionId: personalLinkedIn.currentVersionId, ...publishing },
+            {
+              expectedVersionId: personalLinkedIn.currentVersionId,
+              ...publishing,
+            },
           )
         ).status,
       ).toBe(409);
@@ -660,6 +664,45 @@ describe("Integrity and authorization", () => {
         )
       ).status,
     ).toBe(403);
+    const wcsPayload = {
+      contentId: "CAL-API-001",
+      title: "Imported from WCS",
+      contentDate: "2026-09-20",
+      campaign: "WCS",
+      conceptSummary: "Created by the AI HQ integration.",
+      platform: "LINKEDIN",
+      contentFormat: "IMAGE_POST",
+      plannedPublishAt: "2026-09-20T16:00:00.000Z",
+      caption: "First WCS caption",
+      ctaText: "Learn more",
+      ctaUrl: "https://plirisco.com/",
+      submitForReview: false,
+    };
+    const imported = await call(
+      "integrations/wcs/posts",
+      "POST",
+      wcsPayload,
+      "",
+      header,
+    );
+    expect(imported.status).toBe(201);
+    expect(imported.data.action).toBe("CREATED");
+    const unchanged = await call(
+      "integrations/wcs/posts",
+      "POST",
+      wcsPayload,
+      "",
+      header,
+    );
+    expect(unchanged.data.action).toBe("UNCHANGED");
+    const revised = await call(
+      "integrations/wcs/posts",
+      "POST",
+      { ...wcsPayload, caption: "Revised WCS caption" },
+      "",
+      header,
+    );
+    expect(revised.data.action).toBe("UPDATED");
     delete process.env.INTERNAL_API_KEY;
     expect((await call("content", "GET", undefined, "", header)).status).toBe(
       401,

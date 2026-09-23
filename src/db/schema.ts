@@ -278,6 +278,26 @@ export const auditEvents = pgTable("audit_events", {
     .default({}),
   createdAt: created(),
 });
+export const externalContentLinks = pgTable(
+  "external_content_links",
+  {
+    id: text("id").primaryKey(),
+    source: text("source").notNull(),
+    externalId: text("external_id").notNull(),
+    contentItemId: text("content_item_id")
+      .notNull()
+      .references(() => contentItems.id),
+    platformVariantId: text("platform_variant_id")
+      .notNull()
+      .references(() => platformVariants.id),
+    lastPayloadHash: text("last_payload_hash").notNull(),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [
+    uniqueIndex("external_content_source_id_unique").on(t.source, t.externalId),
+  ],
+);
 export const rateLimit = pgTable("rate_limits", {
   id: text("id").primaryKey(),
   key: text("key").notNull().unique(),

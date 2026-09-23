@@ -41,7 +41,9 @@ async function route(req: Request, ctx: Context) {
           data = p[1] ? items.find((i) => i.id === p[1]) : items;
           if (!data) throw new AppError(404, "Content not found.");
         } else if (p[0] === "coverage")
-          data = coverage(variants.filter((v) => v.publishingAccount === "PLIRIS"));
+          data = coverage(
+            variants.filter((v) => v.publishingAccount === "PLIRIS"),
+          );
         else if (p[0] === "calendar") {
           const url = new URL(req.url);
           const start = url.searchParams.get("start"),
@@ -62,9 +64,9 @@ async function route(req: Request, ctx: Context) {
             (v) =>
               v.publishingAccount === "PLIRIS" &&
               v.reviewStatus ===
-              (p[0] === "review-queue"
-                ? "READY_FOR_REVIEW"
-                : "CHANGES_REQUESTED"),
+                (p[0] === "review-queue"
+                  ? "READY_FOR_REVIEW"
+                  : "CHANGES_REQUESTED"),
           );
       } else if (p[0] === "platform-variants" && p[1] && p[2] === "history")
         data = await service.history(p[1]);
@@ -79,6 +81,14 @@ async function route(req: Request, ctx: Context) {
       const input = JSON.parse(text || "{}");
       if (p[0] === "media" && p[1] === "sign-upload" && method === "POST")
         data = signVideoUpload(actor, input);
+      else if (
+        p[0] === "integrations" &&
+        p[1] === "wcs" &&
+        p[2] === "posts" &&
+        p.length === 3 &&
+        method === "POST"
+      )
+        data = await service.upsertWcsPost(actor, input);
       else if (
         p[0] === "media" &&
         p[1] === "complete-video" &&
