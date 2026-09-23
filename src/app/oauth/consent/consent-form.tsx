@@ -32,11 +32,20 @@ export default function ConsentForm({ scope }: { scope: string }) {
       const result = await response.json();
       if (!response.ok)
         throw new Error("Unable to complete the authorization request.");
-      if (typeof result.redirect_uri !== "string")
+      // Better Auth represents OAuth redirects from JSON requests as
+      // `{ redirect: true, url }`. The endpoint's OpenAPI schema calls this
+      // field `redirect_uri`, but the runtime response uses `url`.
+      const continuationUrl =
+        result.redirect === true && typeof result.url === "string"
+          ? result.url
+          : typeof result.redirect_uri === "string"
+            ? result.redirect_uri
+            : null;
+      if (!continuationUrl)
         throw new Error(
           "The authorization server did not return a continuation URL.",
         );
-      window.location.assign(result.redirect_uri);
+      window.location.assign(continuationUrl);
     } catch (cause) {
       setError(
         cause instanceof Error
