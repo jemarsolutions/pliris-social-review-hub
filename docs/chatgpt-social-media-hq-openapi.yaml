@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: PLIRIS Social Review Hub
+  version: 1.0.0
+  description: >-
+    Send WCS social posts to the PLIRIS Social Review Hub and inspect the review
+    queue. WCS remains the source of truth. This API does not publish to social
+    networks.
+servers:
+  - url: https://REPLACE-WITH-PRODUCTION-HUB-DOMAIN
+    description: Replace with the production Hub URL before importing this schema.
+security:
+  - BearerAuth: []
+paths:
+  /api/v1/integrations/wcs/posts:
+    post:
+      operationId: upsertWcsSocialPost
+      summary: Create or update a WCS post in the review hub
+      description: >-
+        Use the stable WCS Content ID as contentId. Identical retries are safe.
+        A changed payload creates a new immutable version. submitForReview may
+        be true only when final copy and Hub media IDs are ready for review.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WcsPost'
+      responses:
+        '201':
+          description: Created, updated, or unchanged WCS post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Missing or invalid integration bearer key.
+        '403':
+          description: This endpoint is restricted to integration authentication.
+        '409':
+          description: WCS Content ID conflict or unsupported platform/format change.
+        '422':
+          description: Invalid or incomplete post data.
+  /api/v1/review-queue:
+    get:
+      operationId: listPostsAwaitingReview
+      summary: List current posts awaiting human review
+      description: Returns current Ready for Review variants, ordered by planned publish time.
+      responses:
+        '200':
+          description: Review queue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Missing or invalid integration bearer key.
+  /api/v1/revisions:
+    get:
+      operationId: listPostsNeedingRevision
+      summary: List posts with reviewer changes requested
+      description: Returns current Changes Requested variants.
+      responses:
+        '200':
+          description: Revision queue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+        '401':
+          description: Missing or invalid integration bearer key.
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+  schemas:
+    WcsPost:
+      type: object
+      additionalProperties: false
+      required:
+        - contentId
+        - title
+        - contentDate
+        - platform
+        - contentFormat
+        - plannedPublishAt
+        - caption
+      properties:
+        contentId:
+          type: string
+          description: Stable WCS Content ID, such as CAL-008. Reuse for every update.
+        title:
+          type: string
+        contentDate:
+          type: string
+          format: date
+        campaign:
+          type: string
+          default: WCS
+        conceptSummary:
+          type: string
+        platform:
+          type: string
+          enum: [INSTAGRAM, FACEBOOK, LINKEDIN, YOUTUBE, TIKTOK]
+        contentFormat:
+          type: string
+          enum: [IMAGE_POST, CAROUSEL, SHORT_VIDEO, LONG_VIDEO]
+        plannedPublishAt:
+          type: string
+          format: date-time
+          description: Required ISO 8601 timestamp with timezone.
+        publishingAccountName:
+          type: string
+          default: PLIRIS
+          description: Identifies a page, group, channel, or account where relevant.
+        caption:
+          type: string
+          description: Complete final platform-specific caption, not just the WCS hook.
+        headline:
+          type: string
+          description: Required for YouTube review submissions.
+        script:
+          type: string
+        chapters:
+          type: string
+        tags:
+          type: string
+        ctaText:
+          type: string
+        ctaUrl:
+          type: string
+          description: HTTPS URL or empty string.
+        mediaIds:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+          description: Hub media IDs, ordered as the carousel should appear.
+        videoId:
+          type: [string, 'null']
+          description: Hub video media ID.
+        thumbnailId:
+          type: [string, 'null']
+          description: Hub image media ID; required for YouTube long-form review.
+        submitForReview:
+          type: boolean
+          default: false
+          description: Set true only when the final content and all required Hub media are ready.
+    ApiResponse:
+      type: object
+      description: Success envelope. Inspect data.action for CREATED, UPDATED, or UNCHANGED on upserts.
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          additionalProperties: true
