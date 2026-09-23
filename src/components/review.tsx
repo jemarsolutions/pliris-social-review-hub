@@ -111,13 +111,13 @@ export function Review({
       <div className="preview-column">
         <header className="preview-heading">
           <Platform value={previewVariant.platform} />
-          <span>
-            {label(previewVariant.contentFormat)} · Platform preview
-          </span>
+          <span>{label(previewVariant.contentFormat)} · Platform preview</span>
         </header>
         <div
           className={`preview-mode-indicator ${
-            previewVariant.publishingAccount === "PERSONAL" ? "personal" : "pliris"
+            previewVariant.publishingAccount === "PERSONAL"
+              ? "personal"
+              : "pliris"
           }`}
           role="status"
         >
@@ -148,71 +148,76 @@ export function Review({
             <MoreHorizontal size={22} />
           </div>
           {!["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(variant.platform) && (
-              <p className="caption pre-media">{previewVersion.caption}</p>
+            <p className="caption pre-media">{previewVersion.caption}</p>
           )}
-          <div
-            className={`preview-media ${
+          {previewVariant.contentFormat !== "TEXT_POST" && (
+            <div
+              className={`preview-media ${
                 previewIsVideo
-                ? `video-preview ${
-                  previewVariant.contentFormat === "SHORT_VIDEO"
-                      ? "portrait-video"
-                      : "landscape-video"
-                  }`
-                : ""
-            }`}
-          >
-            {previewIsVideo && previewVersion.video ? (
-              <video
-                controls
-                preload="metadata"
-                aria-label={previewVersion.video.altText}
-                src={`/api/media/${previewVersion.video.id}`}
-                poster={
-                  previewVersion.thumbnail
-                    ? `/api/media/${previewVersion.thumbnail.id}?thumb=1`
-                    : `/api/media/${previewVersion.video.id}?thumb=1`
-                }
-              />
-            ) : previewMedia ? (
-              <img src={`/api/media/${previewMedia.id}`} alt={previewMedia.altText} />
-            ) : (
-              <div className="no-media">
-                No {previewIsVideo ? "video" : "image"} attached
-              </div>
-            )}
-            {!previewIsVideo && previewMedia && (
-              <button
-                className="enlarge"
-                aria-label="Enlarge image"
-                onClick={() => setEnlarged(true)}
-              >
-                <Maximize2 size={18} />
-              </button>
-            )}
-            {!previewIsVideo && previewVersion.media.length > 1 && (
-              <>
+                  ? `video-preview ${
+                      previewVariant.contentFormat === "SHORT_VIDEO"
+                        ? "portrait-video"
+                        : "landscape-video"
+                    }`
+                  : ""
+              }`}
+            >
+              {previewIsVideo && previewVersion.video ? (
+                <video
+                  controls
+                  preload="metadata"
+                  aria-label={previewVersion.video.altText}
+                  src={`/api/media/${previewVersion.video.id}`}
+                  poster={
+                    previewVersion.thumbnail
+                      ? `/api/media/${previewVersion.thumbnail.id}?thumb=1`
+                      : `/api/media/${previewVersion.video.id}?thumb=1`
+                  }
+                />
+              ) : previewMedia ? (
+                <img
+                  src={`/api/media/${previewMedia.id}`}
+                  alt={previewMedia.altText}
+                />
+              ) : (
+                <div className="no-media">
+                  No {previewIsVideo ? "video" : "image"} attached
+                </div>
+              )}
+              {!previewIsVideo && previewMedia && (
                 <button
-                  className="slide-arrow previous"
-                  aria-label="Previous slide"
-                  disabled={slide === 0}
-                  onClick={() => setSlide((s) => s - 1)}
+                  className="enlarge"
+                  aria-label="Enlarge image"
+                  onClick={() => setEnlarged(true)}
                 >
-                  <ArrowLeft size={18} />
+                  <Maximize2 size={18} />
                 </button>
-                <button
-                  className="slide-arrow next"
-                  aria-label="Next slide"
-                  disabled={slide === previewVersion.media.length - 1}
-                  onClick={() => setSlide((s) => s + 1)}
-                >
-                  <ArrowRight size={18} />
-                </button>
-                <span className="slide-counter">
-                  {slide + 1} / {previewVersion.media.length}
-                </span>
-              </>
-            )}
-          </div>
+              )}
+              {!previewIsVideo && previewVersion.media.length > 1 && (
+                <>
+                  <button
+                    className="slide-arrow previous"
+                    aria-label="Previous slide"
+                    disabled={slide === 0}
+                    onClick={() => setSlide((s) => s - 1)}
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <button
+                    className="slide-arrow next"
+                    aria-label="Next slide"
+                    disabled={slide === previewVersion.media.length - 1}
+                    onClick={() => setSlide((s) => s + 1)}
+                  >
+                    <ArrowRight size={18} />
+                  </button>
+                  <span className="slide-counter">
+                    {slide + 1} / {previewVersion.media.length}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           <div className="preview-icons" aria-hidden="true">
             {["INSTAGRAM", "TIKTOK"].includes(previewVariant.platform) ? (
               <>
@@ -234,7 +239,9 @@ export function Review({
           {previewIsVideo && previewVersion.headline && (
             <h3 className="video-headline">{previewVersion.headline}</h3>
           )}
-          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(previewVariant.platform) && (
+          {["INSTAGRAM", "TIKTOK", "YOUTUBE"].includes(
+            previewVariant.platform,
+          ) && (
             <p className="caption">
               {previewVariant.platform !== "YOUTUBE" && (
                 <strong>{previewVariant.publishingAccountName} </strong>
@@ -270,7 +277,9 @@ export function Review({
       </div>
       <div className="decision-column">
         <p className="eyebrow">
-          {item.internalReference} · {formatDate(variant.plannedPublishAt)}
+          {item.internalReference} ·{" "}
+          {variant.wcsContentId ? `${variant.wcsContentId} · ` : ""}
+          {formatDate(variant.plannedPublishAt)}
         </p>
         <h2>{item.title}</h2>
         <div className="version-bar">
@@ -374,6 +383,12 @@ export function Review({
         ) : tab === "Review" ? (
           <>
             <dl className="details">
+              {variant.wcsContentId && (
+                <div>
+                  <dt>WCS Content ID</dt>
+                  <dd>{variant.wcsContentId}</dd>
+                </div>
+              )}
               <div>
                 <dt>Planned for (UTC)</dt>
                 <dd>
@@ -544,16 +559,16 @@ export function Review({
                 )}
                 {variant.reviewStatus === "APPROVED" &&
                   variant.publishingStatus !== "PUBLISHED" && (
-                  <Button
-                    className="full"
-                    variant="outline"
-                    onClick={() => setPublishing(true)}
-                  >
-                    {variant.publishingStatus === "SCHEDULED"
-                      ? "Record publication"
-                      : "Record scheduling / publication"}
-                  </Button>
-                )}
+                    <Button
+                      className="full"
+                      variant="outline"
+                      onClick={() => setPublishing(true)}
+                    >
+                      {variant.publishingStatus === "SCHEDULED"
+                        ? "Record publication"
+                        : "Record scheduling / publication"}
+                    </Button>
+                  )}
                 {variant.publishingStatus === "PUBLISHED" && (
                   <small>
                     This version is already recorded as published. Find it in
@@ -699,7 +714,10 @@ export function Review({
           <DialogTitle>Slide {slide + 1}</DialogTitle>
           <DialogDescription>{previewMedia?.altText}</DialogDescription>
           {previewMedia && (
-            <img src={`/api/media/${previewMedia.id}`} alt={previewMedia.altText} />
+            <img
+              src={`/api/media/${previewMedia.id}`}
+              alt={previewMedia.altText}
+            />
           )}
         </DialogContent>
       </Dialog>

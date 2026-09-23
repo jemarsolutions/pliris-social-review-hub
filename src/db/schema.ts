@@ -8,7 +8,9 @@ import {
   jsonb,
   uniqueIndex,
   pgEnum,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 export const roles = pgEnum("role", ["ADMIN", "PRODUCER", "REVIEWER"]);
 export const platforms = pgEnum("platform", [
   "INSTAGRAM",
@@ -18,6 +20,7 @@ export const platforms = pgEnum("platform", [
   "TIKTOK",
 ]);
 export const contentFormats = pgEnum("content_format", [
+  "TEXT_POST",
   "IMAGE_POST",
   "CAROUSEL",
   "SHORT_VIDEO",
@@ -113,6 +116,7 @@ export const platformVariants = pgTable(
     contentFormat: contentFormats("content_format")
       .notNull()
       .default("IMAGE_POST"),
+    wcsContentId: text("wcs_content_id"),
     plannedPublishAt: timestamp("planned_publish_at", {
       withTimezone: true,
     }).notNull(),
@@ -129,6 +133,15 @@ export const platformVariants = pgTable(
     updatedAt: updated(),
   },
   (t) => [
+    uniqueIndex("canonical_wcs_content_id_unique")
+      .on(t.wcsContentId)
+      .where(
+        sql`${t.publishingAccount} = 'PLIRIS' AND ${t.wcsContentId} IS NOT NULL`,
+      ),
+    check(
+      "personal_wcs_content_id_null",
+      sql`${t.publishingAccount} <> 'PERSONAL' OR ${t.wcsContentId} IS NULL`,
+    ),
     uniqueIndex("one_destination_format_per_content").on(
       t.contentItemId,
       t.platform,

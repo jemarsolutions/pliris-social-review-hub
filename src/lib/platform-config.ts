@@ -6,6 +6,7 @@ export const platformValues = [
   "TIKTOK",
 ] as const;
 export const contentFormatValues = [
+  "TEXT_POST",
   "IMAGE_POST",
   "CAROUSEL",
   "SHORT_VIDEO",
@@ -16,7 +17,7 @@ export type ContentFormatValue = (typeof contentFormatValues)[number];
 export const formatsByPlatform: Record<PlatformValue, ContentFormatValue[]> = {
   INSTAGRAM: ["IMAGE_POST", "CAROUSEL", "SHORT_VIDEO"],
   FACEBOOK: ["IMAGE_POST", "CAROUSEL", "SHORT_VIDEO", "LONG_VIDEO"],
-  LINKEDIN: ["IMAGE_POST", "CAROUSEL", "LONG_VIDEO"],
+  LINKEDIN: ["TEXT_POST", "IMAGE_POST", "CAROUSEL", "LONG_VIDEO"],
   YOUTUBE: ["SHORT_VIDEO", "LONG_VIDEO"],
   TIKTOK: ["SHORT_VIDEO"],
 };

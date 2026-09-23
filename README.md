@@ -149,6 +149,10 @@ Repository: `pliris-social-review-hub`. Keep `main` deployable; use feature bran
 
 For an existing deployment, run `npm run db:migrate` against its Neon database before promoting this video-capability branch. The migration preserves old approvals, identifies existing multi-image variants as carousels and enriches their historical image snapshots.
 
+### WCS source IDs and text-only LinkedIn posts
+
+Migration `0008_wcs_ids_and_text_posts` adds a nullable `wcs_content_id` to historical platform variants and the `TEXT_POST` format. Apply `npm run db:migrate` to the production database **before** deploying code that reads this column. New canonical PLIRIS adaptations require a unique `CAL-###` ID; the group retains its generated `PLIRIS-####` reference. Automatic John and Royal mirrors have no separate WCS ID. LinkedIn text posts contain a caption and no image, video, or thumbnail. Existing image and video review requirements still apply.
+
 No paid plan has been enabled or requested. This is a personal prototype. If PLIRIS formally adopts it, reassess Vercel's then-current commercial-use/plan requirements and all provider quotas before production use. No guarantee is made about future free-tier availability.
 
 ## Documentation and Phase 2

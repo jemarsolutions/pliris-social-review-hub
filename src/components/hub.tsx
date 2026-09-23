@@ -144,7 +144,7 @@ export function Hub({
       (platform === "ALL" || v.platform === platform) &&
       (!date || v.plannedPublishAt.slice(0, 10) === date) &&
       (!query ||
-        `${item.title} ${v.version.headline || ""} ${v.version.caption}`
+        `${item.title} ${item.internalReference} ${v.wcsContentId || ""} ${v.version.headline || ""} ${v.version.caption}`
           .toLowerCase()
           .includes(query.toLowerCase())),
   );
@@ -515,6 +515,9 @@ export function Hub({
                           onClick={() => open(item, variant)}
                         >
                           <Platform value={variant.platform} />
+                          {variant.wcsContentId && (
+                            <span>{variant.wcsContentId}</span>
+                          )}
                           <strong>{item.title}</strong>
                           <Status value={effectiveStatus(variant)} />
                         </button>
@@ -802,6 +805,8 @@ function ReviewCard({
             <Video size={34} />
             Video ready
           </span>
+        ) : v.contentFormat === "TEXT_POST" ? (
+          <span className="text-post-card-preview">{v.version.caption}</span>
         ) : (
           <span>No media yet</span>
         )}
@@ -810,6 +815,7 @@ function ReviewCard({
       <div className="card-content">
         <div className="card-meta">
           <Platform value={v.platform} />
+          {v.wcsContentId && <strong>{v.wcsContentId}</strong>}
           <small>v{v.version.versionNumber}</small>
         </div>
         <h3>{item.title}</h3>
@@ -844,6 +850,9 @@ function ContentAdaptations({
       onClick={() => open(item, variant)}
     >
       <Platform value={variant.platform} />
+      {variant.wcsContentId && (
+        <span className="format-badge">{variant.wcsContentId}</span>
+      )}
       <span className="format-badge">{label(variant.contentFormat)}</span>
       <Status value={effectiveStatus(variant)} />
     </Button>

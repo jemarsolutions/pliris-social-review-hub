@@ -166,6 +166,14 @@ function assertPayloadShape(
   },
 ) {
   const videoFormat = ["SHORT_VIDEO", "LONG_VIDEO"].includes(contentFormat);
+  if (
+    contentFormat === "TEXT_POST" &&
+    (data.mediaIds.length || data.videoId || data.thumbnailId)
+  )
+    throw new AppError(
+      422,
+      "Text posts cannot include image, video, or thumbnail media.",
+    );
   if (videoFormat && data.mediaIds.length)
     throw new AppError(
       422,
@@ -302,6 +310,8 @@ export async function createVariant(
       contentItemId: contentId,
       platform: data.platform,
       contentFormat: data.contentFormat,
+      wcsContentId:
+        data.publishingAccount === "PLIRIS" ? data.wcsContentId : null,
       plannedPublishAt: new Date(data.plannedPublishAt),
       publishingAccount: data.publishingAccount,
       publishingAccountName: data.publishingAccountName,
@@ -321,6 +331,7 @@ export async function createVariant(
           contentItemId: contentId,
           platform: data.platform,
           contentFormat: data.contentFormat,
+          wcsContentId: null,
           plannedPublishAt: new Date(data.plannedPublishAt),
           publishingAccount: "PERSONAL",
           publishingAccountName: `${accountName} · ${data.platform}`,
@@ -356,6 +367,11 @@ export async function editVariant(
     requireVersion(v.currentVersionId, data.expectedVersionId);
     assertPayloadShape(v.platform, v.contentFormat, data);
     const publishingAccount = data.publishingAccount || v.publishingAccount;
+    if (v.wcsContentId && publishingAccount !== "PLIRIS")
+      throw new AppError(
+        422,
+        "A WCS-linked PLIRIS adaptation cannot become a personal account.",
+      );
     const publishingAccountName =
       data.publishingAccountName || v.publishingAccountName;
     const [previous] = await tx

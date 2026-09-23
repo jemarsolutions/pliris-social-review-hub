@@ -410,7 +410,10 @@ blockquote {
   border-radius: 50%;
   color: #526978;
   background: #f2f6f8;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 .theme-toggle:hover {
   color: #173f50;
@@ -651,6 +654,17 @@ body.theme-dark .preview-mode-indicator {
   height: 100%;
   object-fit: cover;
 }
+.text-post-card-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 24px;
+  color: #273746;
+  line-height: 1.5;
+  font-size: 0.86rem;
+  white-space: pre-line;
+}
 .media-count {
   position: absolute;
   right: 12px;
@@ -668,6 +682,8 @@ body.theme-dark .preview-mode-indicator {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
 }
 .platform {

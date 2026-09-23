@@ -23,6 +23,7 @@ const mediaRoute = await import("../src/app/api/media/[id]/route");
 let adminCookie = "",
   johnCookie = "",
   producerCookie = "";
+let nextFixtureCalId = 1000;
 const password = "Test-Only-Strong-" + crypto.randomUUID();
 const state: {
   itemId: string;
@@ -54,6 +55,15 @@ async function call(
   cookie = adminCookie,
   extra: Record<string, string> = {},
 ) {
+  if (
+    method === "POST" &&
+    /^content\/[^/]+\/platform-variants$/.test(path) &&
+    body &&
+    !(body instanceof FormData) &&
+    (body as Record<string, unknown>).publishingAccount !== "PERSONAL" &&
+    !("wcsContentId" in (body as Record<string, unknown>))
+  )
+    body = { ...(body as object), wcsContentId: `CAL-${nextFixtureCalId++}` };
   const req = new Request("http://localhost:3000/api/v1/" + path, {
     method,
     headers: {
@@ -90,6 +100,7 @@ beforeAll(async () => {
   johnCookie = await login("john@test.local");
   producerCookie = await login("producer@test.local");
 });
+
 describe("Required three-platform workflow through authenticated API", () => {
   it("Mac creates Monday Educational Content and uploads carousel images", async () => {
     const item = await call("content", "POST", {
@@ -146,7 +157,8 @@ describe("Required three-platform workflow through authenticated API", () => {
     expect(grouped.data[0].variants).toHaveLength(9);
     expect(
       grouped.data[0].variants.filter(
-        (v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL",
+        (v: { publishingAccount: string }) =>
+          v.publishingAccount === "PERSONAL",
       ),
     ).toHaveLength(6);
     const linkedinMirrors = grouped.data[0].variants.filter(
@@ -162,11 +174,9 @@ describe("Required three-platform workflow through authenticated API", () => {
     const plannedDate = new Date(Date.now() + 3 * 86400000).toISOString();
     expect(
       (
-        await call(
-          `platform-variants/${state.ids.LINKEDIN}/plan`,
-          "POST",
-          { plannedPublishAt: plannedDate },
-        )
+        await call(`platform-variants/${state.ids.LINKEDIN}/plan`, "POST", {
+          plannedPublishAt: plannedDate,
+        })
       ).status,
     ).toBe(201);
     const afterPlan = await call("content");
@@ -175,13 +185,15 @@ describe("Required three-platform workflow through authenticated API", () => {
     );
     expect(
       linkedInVariants.every(
-        (v: { plannedPublishAt: string }) =>
-          v.plannedPublishAt === plannedDate,
+        (v: { plannedPublishAt: string }) => v.plannedPublishAt === plannedDate,
       ),
     ).toBe(true);
     expect(
       linkedInVariants
-        .filter((v: { publishingAccount: string }) => v.publishingAccount === "PERSONAL")
+        .filter(
+          (v: { publishingAccount: string }) =>
+            v.publishingAccount === "PERSONAL",
+        )
         .map((v: { reviewStatus: string; publishingStatus: string }) => ({
           reviewStatus: v.reviewStatus,
           publishingStatus: v.publishingStatus,
@@ -211,7 +223,10 @@ describe("Required three-platform workflow through authenticated API", () => {
           await call(
             `platform-variants/${personalLinkedIn.id}/publishing`,
             "POST",
-            { expectedVersionId: personalLinkedIn.currentVersionId, ...publishing },
+            {
+              expectedVersionId: personalLinkedIn.currentVersionId,
+              ...publishing,
+            },
           )
         ).status,
       ).toBe(409);
@@ -936,5 +951,214 @@ describe("Integrity and authorization", () => {
         (item: { id: string }) => item.id === state.itemId,
       ),
     ).toBe(false);
+  });
+});
+
+describe("WCS source IDs and LinkedIn text posts", () => {
+  it("preserves distinct CAL IDs within a PLIRIS group and creates text-only mirrors", async () => {
+    const item = await call("content", "POST", {
+      title: "Three checks before a plan set leaves the desk",
+      contentDate: "2026-10-05",
+    });
+    expect(item.status).toBe(201);
+    expect(item.data.internalReference).toMatch(/^PLIRIS-[0-9]+$/);
+    const source = {
+      plannedPublishAt: "2026-10-05T16:00:00.000Z",
+      caption: "Before a plan set leaves your desk, check three things.",
+      ctaText: "Start a conversation",
+      ctaUrl: "https://plirisco.com/",
+    };
+    const linkedin = await call(
+      `content/${item.data.id}/platform-variants`,
+      "POST",
+      {
+        ...source,
+        platform: "LINKEDIN",
+        contentFormat: "TEXT_POST",
+        wcsContentId: " CAL-063 ",
+        mediaIds: [],
+      },
+    );
+    expect(linkedin.status).toBe(201);
+    expect(linkedin.data.wcsContentId).toBe("CAL-063");
+    const facebook = await call(
+      `content/${item.data.id}/platform-variants`,
+      "POST",
+      {
+        ...source,
+        platform: "FACEBOOK",
+        contentFormat: "IMAGE_POST",
+        wcsContentId: "CAL-064",
+        mediaIds: [state.media[0]],
+      },
+    );
+    const instagram = await call(
+      `content/${item.data.id}/platform-variants`,
+      "POST",
+      {
+        ...source,
+        platform: "INSTAGRAM",
+        contentFormat: "CAROUSEL",
+        wcsContentId: "CAL-065",
+        mediaIds: state.media,
+      },
+    );
+    expect(facebook.status).toBe(201);
+    expect(instagram.status).toBe(201);
+
+    const grouped = await call(`content/${item.data.id}`);
+    expect(grouped.data.internalReference).toBe(item.data.internalReference);
+    const canonical = grouped.data.variants.filter(
+      (v: { publishingAccount: string }) => v.publishingAccount === "PLIRIS",
+    );
+    expect(
+      canonical.map((v: { wcsContentId: string }) => v.wcsContentId).sort(),
+    ).toEqual(["CAL-063", "CAL-064", "CAL-065"]);
+    const mirrors = grouped.data.variants.filter(
+      (v: { publishingAccount: string; platform: string }) =>
+        v.publishingAccount === "PERSONAL" && v.platform === "LINKEDIN",
+    );
+    expect(mirrors).toHaveLength(2);
+    expect(
+      mirrors
+        .map((v: { publishingAccountName: string }) => v.publishingAccountName)
+        .sort(),
+    ).toEqual(["John · LINKEDIN", "Royal · LINKEDIN"]);
+    for (const mirror of mirrors) {
+      expect(mirror.wcsContentId).toBeNull();
+      expect(mirror.contentFormat).toBe("TEXT_POST");
+      expect(mirror.version.caption).toBe(source.caption);
+      expect(mirror.version.ctaText).toBe(source.ctaText);
+      expect(mirror.version.media).toHaveLength(0);
+      expect(mirror.plannedPublishAt).toBe(source.plannedPublishAt);
+    }
+    const history = await call(`platform-variants/${linkedin.data.id}/history`);
+    expect(history.data.variant.wcsContentId).toBe("CAL-063");
+    expect(
+      (
+        await call(
+          `platform-variants/${linkedin.data.id}/submit-review`,
+          "POST",
+          { expectedVersionId: linkedin.data.currentVersionId },
+        )
+      ).status,
+    ).toBe(201);
+    const queue = await call("review-queue");
+    expect(
+      queue.data.filter((v: { id: string }) => v.id === linkedin.data.id),
+    ).toHaveLength(1);
+    expect(
+      queue.data.filter(
+        (v: { wcsContentId: string }) => v.wcsContentId === "CAL-063",
+      ),
+    ).toHaveLength(1);
+
+    const revised = await call(
+      `platform-variants/${linkedin.data.id}`,
+      "PATCH",
+      {
+        expectedVersionId: linkedin.data.currentVersionId,
+        caption: "Updated exact text post.",
+        mediaIds: [],
+      },
+    );
+    expect(revised.status).toBe(200);
+    const afterRevision = await call(`content/${item.data.id}`);
+    expect(
+      afterRevision.data.variants
+        .filter(
+          (v: { publishingAccount: string; platform: string }) =>
+            v.publishingAccount === "PERSONAL" && v.platform === "LINKEDIN",
+        )
+        .every(
+          (v: { version: { caption: string }; wcsContentId: null }) =>
+            v.version.caption === "Updated exact text post." &&
+            v.wcsContentId === null,
+        ),
+    ).toBe(true);
+    expect(
+      (
+        await call(
+          `platform-variants/${linkedin.data.id}/approve`,
+          "POST",
+          { expectedVersionId: revised.data.currentVersionId },
+          johnCookie,
+        )
+      ).status,
+    ).toBe(201);
+    const approved = await call(`content/${item.data.id}`);
+    expect(
+      approved.data.variants
+        .filter(
+          (v: { publishingAccount: string; platform: string }) =>
+            v.publishingAccount === "PERSONAL" && v.platform === "LINKEDIN",
+        )
+        .every(
+          (v: { reviewStatus: string; publishingStatus: string }) =>
+            v.reviewStatus === "APPROVED" &&
+            v.publishingStatus === "UNSCHEDULED",
+        ),
+    ).toBe(true);
+  });
+
+  it("rejects duplicate or malformed WCS IDs and media on text posts", async () => {
+    const item = await call("content", "POST", {
+      title: "Validation fixture",
+      contentDate: "2026-10-06",
+    });
+    const base = {
+      platform: "LINKEDIN",
+      contentFormat: "TEXT_POST",
+      plannedPublishAt: "2026-10-06T16:00:00.000Z",
+      caption: "Text only.",
+      wcsContentId: "CAL-063",
+    };
+    expect(
+      (await call(`content/${item.data.id}/platform-variants`, "POST", base))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await call(`content/${item.data.id}/platform-variants`, "POST", {
+          ...base,
+          wcsContentId: "CAL-abc",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await call(`content/${item.data.id}/platform-variants`, "POST", {
+          ...base,
+          wcsContentId: "CAL-200",
+          mediaIds: [state.media[0]],
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await call(`content/${item.data.id}/platform-variants`, "POST", {
+          ...base,
+          wcsContentId: "CAL-201",
+          videoId: "video-id",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await call(`content/${item.data.id}/platform-variants`, "POST", {
+          ...base,
+          platform: "FACEBOOK",
+          wcsContentId: "CAL-202",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await call(`content/${item.data.id}/platform-variants`, "POST", {
+          ...base,
+          wcsContentId: null,
+        })
+      ).status,
+    ).toBe(422);
   });
 });

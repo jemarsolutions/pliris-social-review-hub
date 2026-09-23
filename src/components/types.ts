@@ -33,6 +33,7 @@ export type Variant = {
   contentItemId: string;
   platform: Platform;
   contentFormat: ContentFormat;
+  wcsContentId: string | null;
   plannedPublishAt: string;
   publishingAccount: "PLIRIS" | "PERSONAL";
   publishingAccountName: string;
