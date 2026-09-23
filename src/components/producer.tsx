@@ -45,8 +45,7 @@ export function Editor({
   variant?: Variant;
   onDone: () => Promise<void>;
 }) {
-  const availableFormats = (platform: Platform) =>
-    formatsByPlatform[platform];
+  const availableFormats = (platform: Platform) => formatsByPlatform[platform];
   const firstPlatform =
     platformValues.find((candidate) => availableFormats(candidate).length) ||
     "INSTAGRAM";
@@ -66,6 +65,7 @@ export function Editor({
       variant?.version.thumbnail || null,
     ),
     [caption, setCaption] = useState(variant?.version.caption || ""),
+    [wcsContentId, setWcsContentId] = useState(variant?.wcsContentId || ""),
     [publishingAccount, setPublishingAccount] = useState<"PLIRIS" | "PERSONAL">(
       variant?.publishingAccount || "PLIRIS",
     ),
@@ -131,7 +131,10 @@ export function Editor({
             tags: isVideo ? form.get("tags") : "",
             ctaText: form.get("ctaText"),
             ctaUrl: form.get("ctaUrl"),
-            mediaIds: isVideo ? [] : media.map((asset) => asset.id),
+            mediaIds:
+              isVideo || contentFormat === "TEXT_POST"
+                ? []
+                : media.map((asset) => asset.id),
             videoId: isVideo ? video?.id || null : null,
             thumbnailId: isVideo ? thumbnail?.id || null : null,
           };
@@ -154,6 +157,8 @@ export function Editor({
               ...snapshot,
               platform,
               contentFormat,
+              wcsContentId:
+                publishingAccount === "PLIRIS" ? wcsContentId : null,
               publishingAccount,
               publishingAccountName,
               plannedPublishAt: new Date(
@@ -210,6 +215,28 @@ export function Editor({
             <strong>{platform.replaceAll("_", " ")}</strong>
             <span>{contentFormat.replaceAll("_", " ")}</span>
           </div>
+        )}
+        {publishingAccount === "PLIRIS" && (
+          <label>
+            WCS Content ID
+            <input
+              name="wcsContentId"
+              value={wcsContentId}
+              onChange={(event) =>
+                setWcsContentId(event.target.value.toUpperCase())
+              }
+              placeholder="CAL-063"
+              pattern="CAL-[0-9]+"
+              required={!variant}
+              readOnly={!!variant}
+              aria-describedby="wcs-id-help"
+            />
+            <small id="wcs-id-help">
+              {variant
+                ? "Linked to this canonical adaptation. Contact an admin to correct a source mapping."
+                : "Use the exact Content ID from the Working Content System."}
+            </small>
+          </label>
         )}
         <label>
           Planned date / time (UTC)
@@ -498,7 +525,7 @@ export function Editor({
         </label>
       </div>
 
-      {!isVideo && (
+      {!isVideo && contentFormat !== "TEXT_POST" && (
         <div className="editor-media">
           <h3>Images & carousel order</h3>
           <p>The order shown here is the order the reviewer approves.</p>

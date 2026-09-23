@@ -54,6 +54,12 @@ export const variantSchema = z
     plannedPublishAt: z.iso.datetime(),
     publishingAccount: z.enum(["PLIRIS", "PERSONAL"]).default("PLIRIS"),
     publishingAccountName: z.string().trim().min(1).max(200).default("PLIRIS"),
+    wcsContentId: z
+      .string()
+      .trim()
+      .regex(/^CAL-[0-9]+$/, "Use a CAL ID such as CAL-063.")
+      .nullable()
+      .optional(),
     ...snapshotFields,
   })
   .strict()
@@ -63,6 +69,18 @@ export const variantSchema = z
         code: "custom",
         path: ["contentFormat"],
         message: "That format is not available for this platform.",
+      });
+    if (value.publishingAccount === "PLIRIS" && !value.wcsContentId)
+      ctx.addIssue({
+        code: "custom",
+        path: ["wcsContentId"],
+        message: "WCS Content ID is required for a PLIRIS adaptation.",
+      });
+    if (value.publishingAccount === "PERSONAL" && value.wcsContentId)
+      ctx.addIssue({
+        code: "custom",
+        path: ["wcsContentId"],
+        message: "Personal mirrors follow the canonical WCS ID.",
       });
   });
 export const editSchema = z
