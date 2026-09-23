@@ -1,5 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { jwt } from "better-auth/plugins";
+import { mcp } from "@better-auth/mcp";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { getDb } from "@/db";
 import * as schema from "@/db/schema";
 import { getAppBaseUrl, getTrustedAppOrigins } from "./app-origin";
@@ -32,6 +36,21 @@ function createAuth() {
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     rateLimit: { enabled: true, storage: "database", modelName: "rateLimit" },
     trustedOrigins: getTrustedAppOrigins(),
+    plugins: [
+      jwt(),
+      mcp({
+        loginPage: "/login",
+        consentPage: "/oauth/consent",
+        resource: `${baseURL}/api/mcp`,
+        scopes: ["review:read", "wcs:write", "offline_access"],
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+      }),
+      cimd({
+        fetchClientMetadataResource,
+        metadataProfile: "mcp-2026-07-28",
+      }),
+    ],
     advanced: {
       useSecureCookies: baseURL.startsWith("https://"),
     },

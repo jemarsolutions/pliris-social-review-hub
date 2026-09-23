@@ -44,7 +44,24 @@ export default function Login() {
                 throw new Error(
                   "Unable to sign in. Check your email and password.",
                 );
-              window.location.href = "/";
+              const result = await r.json().catch(() => null);
+              const callback = new URLSearchParams(window.location.search).get(
+                "callbackURL",
+              );
+              const oauthParams = new URLSearchParams(window.location.search);
+              const oauthAuthorization =
+                oauthParams.has("client_id") &&
+                oauthParams.has("redirect_uri") &&
+                oauthParams.has("sig");
+              const safeCallback =
+                callback?.startsWith("/") && !callback.startsWith("//")
+                  ? callback
+                  : null;
+              window.location.href =
+                (oauthAuthorization
+                  ? `/oauth/consent?${oauthParams.toString()}`
+                  : safeCallback) ||
+                (typeof result?.url === "string" ? result.url : "/");
             } catch (err) {
               setError((err as Error).message);
             } finally {
