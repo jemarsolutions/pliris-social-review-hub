@@ -197,11 +197,12 @@ export function Hub({
   );
   const activeContentItems = data.items.filter(
     (item) =>
-      item.variants.some(
-        (variant) =>
-          variant.publishingAccount === "PLIRIS" &&
-          variant.publishingStatus !== "PUBLISHED",
-      ) &&
+      (!item.variants.length ||
+        item.variants.some(
+          (variant) =>
+            variant.publishingAccount === "PLIRIS" &&
+            variant.publishingStatus !== "PUBLISHED",
+        )) &&
       (!query || item.title.toLowerCase().includes(query.toLowerCase())),
   );
   const monday = new Date();
