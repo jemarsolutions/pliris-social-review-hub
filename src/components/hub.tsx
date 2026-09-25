@@ -22,6 +22,11 @@ import {
 import { SiFacebook, SiInstagram, SiTiktok, SiYoutube } from "react-icons/si";
 import { FaLinkedin } from "react-icons/fa6";
 import { platformValues } from "@/lib/platform-config";
+import {
+  browserTimeZone,
+  formatLocalDate,
+  localDateKey,
+} from "@/lib/date-time";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -112,13 +117,15 @@ export function Hub({
     [weekOffset, setWeekOffset] = useState(0),
     [error, setError] = useState(""),
     [darkMode, setDarkMode] = useState(false),
-    [themeReady, setThemeReady] = useState(false);
+    [themeReady, setThemeReady] = useState(false),
+    [timeZone, setTimeZone] = useState("UTC");
   useEffect(() => {
     const saved = window.localStorage.getItem("pliris-theme");
     const next = saved === "dark";
     setDarkMode(next);
     document.body.classList.toggle("theme-dark", next);
     setThemeReady(true);
+    setTimeZone(browserTimeZone());
   }, []);
   function toggleTheme() {
     const next = !darkMode;
@@ -142,7 +149,7 @@ export function Hub({
   const filtered = all.filter(
     ({ item, variant: v }) =>
       (platform === "ALL" || v.platform === platform) &&
-      (!date || v.plannedPublishAt.slice(0, 10) === date) &&
+      (!date || localDateKey(v.plannedPublishAt, timeZone) === date) &&
       (!query ||
         `${item.title} ${item.internalReference} ${v.wcsContentId || ""} ${v.version.headline || ""} ${v.version.caption}`
           .toLowerCase()
@@ -178,7 +185,7 @@ export function Hub({
   ).sort(([a], [b]) => a.localeCompare(b));
   const scheduledGroups = Array.from(
     visible.reduce((groups, entry) => {
-      const key = entry.variant.plannedPublishAt.slice(0, 10);
+      const key = localDateKey(entry.variant.plannedPublishAt, timeZone);
       const group = groups.get(key) || [];
       group.push(entry);
       groups.set(key, group);
@@ -205,15 +212,16 @@ export function Hub({
         )) &&
       (!query || item.title.toLowerCase().includes(query.toLowerCase())),
   );
-  const monday = new Date();
-  monday.setUTCHours(0, 0, 0, 0);
+  const todayKey = localDateKey(new Date().toISOString(), timeZone);
+  const monday = new Date(`${todayKey}T12:00:00.000Z`);
   monday.setUTCDate(
     monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) + weekOffset * 7,
   );
-  const days = Array.from(
-    { length: 7 },
-    (_, i) => new Date(monday.getTime() + i * 86400000),
-  );
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setUTCDate(monday.getUTCDate() + i);
+    return day;
+  });
   const open = (item: Item, variant: Variant) => setSelected({ item, variant });
   return (
     <div className="app-shell">
@@ -383,7 +391,7 @@ export function Hub({
                   </div>
                   <p>
                     {data.coverage.earliestUnapproved
-                      ? `Next awaiting approval: ${formatDate(data.coverage.earliestUnapproved.plannedPublishAt)} · ${data.coverage.earliestUnapproved.title}`
+                      ? `Next awaiting approval: ${formatLocalDate(data.coverage.earliestUnapproved.plannedPublishAt, timeZone)} · ${data.coverage.earliestUnapproved.title}`
                       : "No upcoming unapproved content in this window."}
                   </p>
                 </div>
@@ -501,13 +509,19 @@ export function Hub({
                           timeZone: "UTC",
                         })}
                       </span>
-                      <strong>{day.getUTCDate()}</strong>
+                      <strong>
+                        {day.toLocaleDateString("en-US", {
+                          day: "numeric",
+                          timeZone: "UTC",
+                        })}
+                      </strong>
                     </header>
                     {filtered
                       .filter(
                         ({ variant: v }) =>
                           v.publishingAccount === "PLIRIS" &&
-                          v.plannedPublishAt.slice(0, 10) === dateKey,
+                          localDateKey(v.plannedPublishAt, timeZone) ===
+                            dateKey,
                       )
                       .map(({ item, variant }) => (
                         <button
@@ -604,6 +618,7 @@ export function Hub({
                             item={item}
                             variant={v}
                             open={open}
+                            timeZone={timeZone}
                           />
                         ))}
                       </div>
@@ -626,6 +641,7 @@ export function Hub({
                               item={item}
                               variant={v}
                               open={open}
+                              timeZone={timeZone}
                             />
                           ))}
                         </div>
@@ -657,6 +673,7 @@ export function Hub({
                                   item={item}
                                   variant={v}
                                   open={open}
+                                  timeZone={timeZone}
                                 />
                               ))}
                             </div>
@@ -672,6 +689,7 @@ export function Hub({
                           item={item}
                           variant={v}
                           open={open}
+                          timeZone={timeZone}
                         />
                       ))}
             </div>
@@ -787,10 +805,12 @@ function ReviewCard({
   item,
   variant: v,
   open,
+  timeZone,
 }: {
   item: Item;
   variant: Variant;
   open: (item: Item, variant: Variant) => void;
+  timeZone: string;
 }) {
   return (
     <button className="review-card" onClick={() => open(item, v)}>
@@ -820,7 +840,7 @@ function ReviewCard({
           <small>v{v.version.versionNumber}</small>
         </div>
         <h3>{item.title}</h3>
-        <p>{formatDate(v.plannedPublishAt, true)}</p>
+        <p>{formatLocalDate(v.plannedPublishAt, timeZone, true)}</p>
         <div className="card-footer">
           <Status value={effectiveStatus(v)} />
           <ArrowUpRight size={18} />
