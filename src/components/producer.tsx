@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import { formatsByPlatform, platformValues } from "@/lib/platform-config";
 import { uploadVideo } from "@/lib/client-video-upload";
+import {
+  browserTimeZone,
+  formatTimeZone,
+  toLocalDateTimeInput,
+} from "@/lib/date-time";
 import { Button } from "./ui/button";
 import {
   api,
@@ -78,7 +83,16 @@ export function Editor({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [uploading, setUploading] = useState(false),
-    [uploadProgress, setUploadProgress] = useState(0);
+    [uploadProgress, setUploadProgress] = useState(0),
+    [timeZone, setTimeZone] = useState<string | null>(null),
+    [plannedPublishAt, setPlannedPublishAt] = useState(
+      variant ? "" : `${item.contentDate}T16:00`,
+    );
+  useEffect(() => setTimeZone(browserTimeZone()), []);
+  useEffect(() => {
+    if (variant)
+      setPlannedPublishAt(toLocalDateTimeInput(variant.plannedPublishAt));
+  }, [variant?.plannedPublishAt]);
   const isVideo = ["SHORT_VIDEO", "LONG_VIDEO"].includes(contentFormat);
   const platformOptions = platformValues.filter(
     (candidate) => availableFormats(candidate).length,
@@ -146,7 +160,7 @@ export function Editor({
               expectedVersionId: variant.currentVersionId,
             });
             const planned = new Date(
-              String(form.get("plannedPublishAt")) + "Z",
+              String(form.get("plannedPublishAt")),
             ).toISOString();
             if (planned !== new Date(variant.plannedPublishAt).toISOString())
               await api(`platform-variants/${variant.id}/plan`, "POST", {
@@ -162,7 +176,7 @@ export function Editor({
               publishingAccount,
               publishingAccountName,
               plannedPublishAt: new Date(
-                String(form.get("plannedPublishAt")) + "Z",
+                String(form.get("plannedPublishAt")),
               ).toISOString(),
             });
           }
@@ -239,17 +253,18 @@ export function Editor({
           </label>
         )}
         <label>
-          Planned date / time (UTC)
+          Planned date / time
           <input
             name="plannedPublishAt"
             type="datetime-local"
             required
-            defaultValue={
-              variant
-                ? variant.plannedPublishAt.slice(0, 16)
-                : `${item.contentDate}T16:00`
-            }
+            value={plannedPublishAt}
+            onChange={(event) => setPlannedPublishAt(event.target.value)}
           />
+          <small>
+            Entered in {timeZone ? formatTimeZone(timeZone) : "your local time"}
+            . Other viewers will see it in their own timezone.
+          </small>
         </label>
       </div>
 

@@ -27,7 +27,13 @@ import {
   type History,
   type Version,
 } from "./types";
-import { effectiveStatus, Platform, Status, formatDate, label } from "./hub";
+import { effectiveStatus, Platform, Status, label } from "./hub";
+import {
+  browserTimeZone,
+  formatLocalDate,
+  formatLocalDateTime,
+  formatTimeZone,
+} from "@/lib/date-time";
 export function Review({
   item,
   variant,
@@ -52,7 +58,8 @@ export function Review({
     [enlarged, setEnlarged] = useState(false),
     [tab, setTab] = useState("Review"),
     [publishing, setPublishing] = useState(false),
-    [previewVariant, setPreviewVariant] = useState(variant);
+    [previewVariant, setPreviewVariant] = useState(variant),
+    [timeZone, setTimeZone] = useState<string | null>(null);
   async function load() {
     setHistory(await api<History>(`platform-variants/${variant.id}/history`));
   }
@@ -63,6 +70,7 @@ export function Review({
     setTab("Review");
     setPreviewVariant(variant);
   }, [variant.id, variant.currentVersionId, variant.reviewStatus]);
+  useEffect(() => setTimeZone(browserTimeZone()), []);
   const version =
     history?.versions.find((v) => v.id === versionId) || variant.version;
   const current = version.id === variant.currentVersionId;
@@ -82,6 +90,16 @@ export function Review({
     .slice()
     .reverse()
     .find((record) => record.status === "PUBLISHED");
+  const scheduledRecord = history?.publishing
+    .slice()
+    .reverse()
+    .find((record) => record.status === "SCHEDULED");
+  const publishingTimestamp =
+    variant.publishingStatus === "PUBLISHED"
+      ? publishedRecord?.publishedAt
+      : variant.publishingStatus === "SCHEDULED"
+        ? scheduledRecord?.scheduledAt
+        : null;
   const personalVariants = item.variants.filter(
     (candidate) =>
       variant.publishingAccount === "PLIRIS" &&
@@ -279,7 +297,9 @@ export function Review({
         <p className="eyebrow">
           {item.internalReference} ·{" "}
           {variant.wcsContentId ? `${variant.wcsContentId} · ` : ""}
-          {formatDate(variant.plannedPublishAt)}
+          {timeZone
+            ? formatLocalDate(variant.plannedPublishAt, timeZone)
+            : "Loading local date…"}
         </p>
         <h2>{item.title}</h2>
         <div className="version-bar">
@@ -390,13 +410,27 @@ export function Review({
                 </div>
               )}
               <div>
-                <dt>Planned for (UTC)</dt>
+                <dt>Planned for</dt>
                 <dd>
-                  {new Date(variant.plannedPublishAt).toLocaleString("en-US", {
-                    timeZone: "UTC",
-                  })}
+                  {timeZone
+                    ? formatLocalDateTime(variant.plannedPublishAt, timeZone)
+                    : "Loading local time…"}
                 </dd>
               </div>
+              {publishingTimestamp && (
+                <div>
+                  <dt>
+                    {variant.publishingStatus === "PUBLISHED"
+                      ? "Published at"
+                      : "Scheduled for"}
+                  </dt>
+                  <dd>
+                    {timeZone
+                      ? formatLocalDateTime(publishingTimestamp, timeZone)
+                      : "Loading local time…"}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Publishing</dt>
                 <dd>{label(variant.publishingStatus)}</dd>
@@ -739,11 +773,11 @@ export function Review({
                 expectedVersionId: variant.currentVersionId,
                 status,
                 ...(status === "SCHEDULED"
-                  ? { scheduledAt: new Date(at + "Z").toISOString() }
+                  ? { scheduledAt: new Date(at).toISOString() }
                   : {}),
                 ...(status === "PUBLISHED"
                   ? {
-                      publishedAt: new Date(at + "Z").toISOString(),
+                      publishedAt: new Date(at).toISOString(),
                       publishedUrl: f.get("url"),
                     }
                   : {}),
@@ -761,8 +795,13 @@ export function Review({
               </select>
             </label>
             <label>
-              Scheduled / published time (UTC)
+              Scheduled / published time
               <input name="at" type="datetime-local" required />
+              <small>
+                Entered in{" "}
+                {timeZone ? formatTimeZone(timeZone) : "your local time"}. Other
+                viewers will see it in their own timezone.
+              </small>
             </label>
             <label>
               Published post URL

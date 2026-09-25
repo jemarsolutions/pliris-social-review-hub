@@ -91,6 +91,7 @@ export type History = {
     id: string;
     versionId: string;
     status: string;
+    scheduledAt: string | null;
     publishedAt: string | null;
     publishedUrl: string | null;
   }[];
