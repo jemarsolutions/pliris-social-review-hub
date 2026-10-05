@@ -35,12 +35,15 @@ export async function draftPersonalCaption(input: {
       503,
       "AI captions are not configured yet. You can write and save a personal caption now.",
     );
-  // Account labels are displayed as `John · INSTAGRAM`; tolerate either the
-  // normal middle dot or a bullet so copied/encoded labels still resolve.
-  const name = input.accountName.split(/\s*[·•]\s*/)[0] as keyof typeof captionVoices;
-  const voice = captionVoices[name];
-  if (!voice)
+  // Account labels are displayed as `John · INSTAGRAM`. Resolve the voice from
+  // the account prefix so separator/encoding differences cannot break it.
+  const name = (Object.keys(captionVoices) as Array<keyof typeof captionVoices>).find(
+    (candidate) =>
+      input.accountName.trim().toLowerCase().startsWith(candidate.toLowerCase()),
+  );
+  if (!name)
     throw new AppError(422, "No caption voice is configured for this account.");
+  const voice = captionVoices[name];
   const model = captionModel();
   const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
   const result = await generateText({
