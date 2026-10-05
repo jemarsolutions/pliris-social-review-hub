@@ -22,7 +22,7 @@ export function captionAiConfigured() {
   return !!process.env.AI_GATEWAY_API_KEY?.trim();
 }
 export function captionModel() {
-  return process.env.PERSONAL_CAPTION_MODEL?.trim() || "openai/gpt-6.1-sol";
+  return process.env.PERSONAL_CAPTION_MODEL?.trim() || "openai/gpt-5.4";
 }
 export async function draftPersonalCaption(input: {
   accountName: string;
@@ -35,7 +35,9 @@ export async function draftPersonalCaption(input: {
       503,
       "AI captions are not configured yet. You can write and save a personal caption now.",
     );
-  const name = input.accountName.split(" · ")[0] as keyof typeof captionVoices;
+  // Account labels are displayed as `John · INSTAGRAM`; tolerate either the
+  // normal middle dot or a bullet so copied/encoded labels still resolve.
+  const name = input.accountName.split(/\s*[·•]\s*/)[0] as keyof typeof captionVoices;
   const voice = captionVoices[name];
   if (!voice)
     throw new AppError(422, "No caption voice is configured for this account.");
