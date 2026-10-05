@@ -20,6 +20,13 @@ import {
   decisionSchema,
 } from "./validation";
 import type { ContentFormatValue, PlatformValue } from "./platform-config";
+import { z } from "zod";
+import {
+  captionAiConfigured,
+  captionModel,
+  draftPersonalCaption,
+  personalCaptionSchema,
+} from "./personal-captions";
 const id = () => crypto.randomUUID();
 async function audit(
   tx: Transaction,
@@ -341,7 +348,7 @@ export async function createVariant(
           actor,
           personalVariantId,
           1,
-          data,
+          { ...data, ctaText: "", ctaUrl: "" },
         );
         await tx
           .update(s.platformVariants)
@@ -442,6 +449,13 @@ export async function editVariant(
         publishingAccount,
         publishingAccountName,
         publishingStatus: "UNSCHEDULED",
+        ...(v.publishingAccount === "PERSONAL"
+          ? {
+              personalGenerationId: null,
+              personalCaptionEdited: true,
+              personalCaptionStatus: "OUTDATED",
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(s.platformVariants.id, variantId))
@@ -462,7 +476,8 @@ export async function editVariant(
             eq(s.platformVariants.contentFormat, v.contentFormat),
             eq(s.platformVariants.publishingAccount, "PERSONAL"),
           ),
-        );
+        )
+        .for("update");
       for (const personal of personalMirrors) {
         const [personalPrevious] = await tx
           .select()
@@ -473,7 +488,16 @@ export async function editVariant(
           actor,
           personal.id,
           personalPrevious.versionNumber + 1,
-          data,
+          {
+            ...data,
+            // Once personalized, company edits update creative but preserve copy.
+            caption:
+              personal.personalCaptionStatus === "NOT_GENERATED"
+                ? data.caption
+                : personalPrevious.caption,
+            ctaText: "",
+            ctaUrl: "",
+          },
         );
         await tx
           .update(s.platformVariants)
@@ -481,6 +505,11 @@ export async function editVariant(
             currentVersionId: personalVersionId,
             reviewStatus: "DRAFT",
             publishingStatus: "UNSCHEDULED",
+            personalCaptionStatus:
+              personal.personalCaptionStatus === "NOT_GENERATED"
+                ? "NOT_GENERATED"
+                : "OUTDATED",
+            personalGenerationId: null,
             updatedAt: new Date(),
           })
           .where(eq(s.platformVariants.id, personal.id));
@@ -493,6 +522,342 @@ export async function editVariant(
     return updated;
   });
 }
+const personalInput = z
+  .object({
+    expectedVersionId: z.string().min(1),
+    expectedSourceVersionId: z.string().min(1),
+    caption: personalCaptionSchema,
+    ready: z.boolean().default(false),
+  })
+  .strict();
+const generationInput = personalInput.pick({
+  expectedVersionId: true,
+  expectedSourceVersionId: true,
+});
+
+async function personalSource(personalId: string) {
+  const [personal] = await getDb()
+    .select()
+    .from(s.platformVariants)
+    .where(eq(s.platformVariants.id, personalId));
+  if (!personal || personal.publishingAccount !== "PERSONAL")
+    throw new AppError(422, "Choose a personal account caption.");
+  const [source] = await getDb()
+    .select()
+    .from(s.platformVariants)
+    .where(
+      and(
+        eq(s.platformVariants.contentItemId, personal.contentItemId),
+        eq(s.platformVariants.platform, personal.platform),
+        eq(s.platformVariants.contentFormat, personal.contentFormat),
+        eq(s.platformVariants.publishingAccount, "PLIRIS"),
+      ),
+    );
+  if (!source)
+    throw new AppError(
+      422,
+      "This personal account has no matching PLIRIS post.",
+    );
+  return { personal, source };
+}
+function versionPayload(version: typeof s.versions.$inferSelect) {
+  return {
+    ...version,
+    mediaIds: version.media.map((m) => m.id),
+    videoId: version.video?.id || null,
+    thumbnailId: version.thumbnail?.id || null,
+  };
+}
+export async function savePersonalCaption(
+  actor: Actor,
+  personalId: string,
+  input: unknown,
+) {
+  requireProducer(actor);
+  const data = personalInput.parse(input);
+  const { source } = await personalSource(personalId);
+  return getDb().transaction(async (tx) => {
+    const currentSource = await lock(tx, source.id);
+    const personal = await lock(tx, personalId);
+    requireVersion(
+      currentSource.currentVersionId,
+      data.expectedSourceVersionId,
+    );
+    requireVersion(personal.currentVersionId, data.expectedVersionId);
+    const [previous] = await tx
+      .select()
+      .from(s.versions)
+      .where(eq(s.versions.id, personal.currentVersionId!));
+    const [sourceVersion] = await tx
+      .select()
+      .from(s.versions)
+      .where(eq(s.versions.id, currentSource.currentVersionId!));
+    const versionId = await insertVersion(
+      tx,
+      actor,
+      personalId,
+      previous.versionNumber + 1,
+      {
+        ...versionPayload(sourceVersion),
+        caption: data.caption,
+        ctaText: "",
+        ctaUrl: "",
+      },
+    );
+    const [updated] = await tx
+      .update(s.platformVariants)
+      .set({
+        currentVersionId: versionId,
+        personalSourceVersionId: currentSource.currentVersionId,
+        personalGenerationId: null,
+        personalCaptionStatus: data.ready ? "READY" : "NEEDS_REVIEW",
+        personalCaptionEdited: true,
+        reviewStatus:
+          data.ready && currentSource.reviewStatus === "APPROVED"
+            ? "APPROVED"
+            : "DRAFT",
+        publishingStatus: "UNSCHEDULED",
+        updatedAt: new Date(),
+      })
+      .where(eq(s.platformVariants.id, personalId))
+      .returning();
+    await audit(
+      tx,
+      actor,
+      data.ready ? "PERSONAL_CAPTION_READY" : "PERSONAL_CAPTION_SAVED",
+      personalId,
+      {
+        versionId,
+        sourceVersionId: currentSource.currentVersionId,
+      },
+    );
+    return updated;
+  });
+}
+
+export async function generatePersonalCaption(
+  actor: Actor,
+  personalId: string,
+  input: unknown,
+) {
+  requireProducer(actor);
+  const data = generationInput.parse(input);
+  return runCaptionGeneration(actor, personalId, data, false);
+}
+
+async function runCaptionGeneration(
+  actor: Actor,
+  personalId: string,
+  expected: z.infer<typeof generationInput>,
+  automatic: boolean,
+) {
+  if (!captionAiConfigured())
+    throw new AppError(
+      503,
+      "AI captions are not configured yet. You can write and save a personal caption now.",
+    );
+  const { source } = await personalSource(personalId);
+  const generationId = id();
+  const claimed = await getDb().transaction(async (tx) => {
+    const currentSource = await lock(tx, source.id);
+    const personal = await lock(tx, personalId);
+    requireVersion(
+      currentSource.currentVersionId,
+      expected.expectedSourceVersionId,
+    );
+    requireVersion(personal.currentVersionId, expected.expectedVersionId);
+    if (
+      personal.personalCaptionStatus === "GENERATING" &&
+      Date.now() - personal.updatedAt.getTime() < 120000
+    )
+      throw new AppError(
+        409,
+        "This caption is already generating. Please wait.",
+      );
+    if (
+      automatic &&
+      (personal.personalCaptionEdited ||
+        (personal.personalSourceVersionId === currentSource.currentVersionId &&
+          ["READY", "NEEDS_REVIEW"].includes(personal.personalCaptionStatus)))
+    )
+      return null;
+    const [version] = await tx
+      .select()
+      .from(s.versions)
+      .where(eq(s.versions.id, currentSource.currentVersionId!));
+    const [item] = await tx
+      .select()
+      .from(s.contentItems)
+      .where(eq(s.contentItems.id, source.contentItemId));
+    await tx.insert(s.captionGenerations).values({
+      id: generationId,
+      platformVariantId: personalId,
+      sourceVersionId: version.id,
+      createdBy: actor.id,
+      model: captionModel(),
+    });
+    await tx
+      .update(s.platformVariants)
+      .set({
+        personalCaptionStatus: "GENERATING",
+        personalGenerationId: generationId,
+        updatedAt: new Date(),
+      })
+      .where(eq(s.platformVariants.id, personalId));
+    return { personal, version, item };
+  });
+  if (!claimed) return { skipped: true };
+  try {
+    const result = await draftPersonalCaption({
+      accountName: claimed.personal.publishingAccountName,
+      platform: source.platform,
+      title: claimed.item.title,
+      caption: claimed.version.caption,
+    });
+    // Persist the result even if a concurrent source/personal edit means it cannot
+    // be applied. History keeps this paid output retrievable.
+    await getDb()
+      .update(s.captionGenerations)
+      .set({
+        result: result.caption,
+        usage: result.usage as unknown as Record<string, unknown>,
+        status: "COMPLETE",
+        updatedAt: new Date(),
+      })
+      .where(eq(s.captionGenerations.id, generationId));
+    return await getDb().transaction(async (tx) => {
+      const currentSource = await lock(tx, source.id);
+      const personal = await lock(tx, personalId);
+      requireVersion(
+        currentSource.currentVersionId,
+        expected.expectedSourceVersionId,
+      );
+      requireVersion(personal.currentVersionId, expected.expectedVersionId);
+      if (
+        personal.personalCaptionStatus !== "GENERATING" ||
+        personal.personalGenerationId !== generationId
+      )
+        throw new AppError(
+          409,
+          "This caption changed while AI was generating. The result is saved in history.",
+        );
+      const [previous] = await tx
+        .select()
+        .from(s.versions)
+        .where(eq(s.versions.id, personal.currentVersionId!));
+      const versionId = await insertVersion(
+        tx,
+        actor,
+        personalId,
+        previous.versionNumber + 1,
+        {
+          ...versionPayload(claimed.version),
+          caption: result.caption,
+          ctaText: "",
+          ctaUrl: "",
+        },
+      );
+      const [updated] = await tx
+        .update(s.platformVariants)
+        .set({
+          currentVersionId: versionId,
+          personalSourceVersionId: claimed.version.id,
+          personalGenerationId: null,
+          personalCaptionStatus: "NEEDS_REVIEW",
+          personalCaptionEdited: false,
+          reviewStatus: "DRAFT",
+          publishingStatus: "UNSCHEDULED",
+          updatedAt: new Date(),
+        })
+        .where(eq(s.platformVariants.id, personalId))
+        .returning();
+      await audit(tx, actor, "PERSONAL_CAPTION_GENERATED", personalId, {
+        generationId,
+        versionId,
+        sourceVersionId: claimed.version.id,
+        model: result.model,
+      });
+      return updated;
+    });
+  } catch (error) {
+    await getDb()
+      .update(s.captionGenerations)
+      .set({
+        status:
+          error instanceof AppError && error.status === 409
+            ? "SUPERSEDED"
+            : "FAILED",
+        error:
+          error instanceof AppError
+            ? error.message
+            : "AI generation failed. Try again or write the caption manually.",
+        updatedAt: new Date(),
+      })
+      .where(eq(s.captionGenerations.id, generationId));
+    await getDb()
+      .update(s.platformVariants)
+      .set({
+        personalCaptionStatus: "FAILED",
+        personalGenerationId: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(s.platformVariants.id, personalId),
+          eq(s.platformVariants.currentVersionId, expected.expectedVersionId),
+          eq(s.platformVariants.personalCaptionStatus, "GENERATING"),
+          eq(s.platformVariants.personalGenerationId, generationId),
+        ),
+      );
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      502,
+      "AI generation failed. Try again or write the caption manually.",
+    );
+  }
+}
+
+// Called only by authenticated create/approve/edit routes after the response.
+export async function preparePersonalCaptions(actor: Actor, sourceId: string) {
+  if (!captionAiConfigured()) return;
+  if (!["ADMIN", "PRODUCER", "REVIEWER"].includes(actor.role))
+    throw new AppError(403, "Access required.");
+  const [source] = await getDb()
+    .select()
+    .from(s.platformVariants)
+    .where(eq(s.platformVariants.id, sourceId));
+  if (!source || source.publishingAccount !== "PLIRIS") return;
+  if (
+    actor.role === "REVIEWER" &&
+    (actor.integration || source.reviewStatus !== "APPROVED")
+  )
+    return;
+  const personals = await getDb()
+    .select()
+    .from(s.platformVariants)
+    .where(
+      and(
+        eq(s.platformVariants.contentItemId, source.contentItemId),
+        eq(s.platformVariants.platform, source.platform),
+        eq(s.platformVariants.contentFormat, source.contentFormat),
+        eq(s.platformVariants.publishingAccount, "PERSONAL"),
+      ),
+    );
+  await Promise.allSettled(
+    personals.map((personal) =>
+      runCaptionGeneration(
+        actor,
+        personal.id,
+        {
+          expectedVersionId: personal.currentVersionId!,
+          expectedSourceVersionId: source.currentVersionId!,
+        },
+        true,
+      ),
+    ),
+  );
+}
+
 export async function submitReview(
   actor: Actor,
   variantId: string,
@@ -579,6 +944,11 @@ export async function decide(
             eq(s.platformVariants.platform, v.platform),
             eq(s.platformVariants.contentFormat, v.contentFormat),
             eq(s.platformVariants.publishingAccount, "PERSONAL"),
+            eq(s.platformVariants.personalCaptionStatus, "READY"),
+            eq(
+              s.platformVariants.personalSourceVersionId,
+              data.expectedVersionId,
+            ),
           ),
         );
       if (personalMirrors.length) {
@@ -591,13 +961,24 @@ export async function decide(
               eq(s.platformVariants.platform, v.platform),
               eq(s.platformVariants.contentFormat, v.contentFormat),
               eq(s.platformVariants.publishingAccount, "PERSONAL"),
+              eq(s.platformVariants.personalCaptionStatus, "READY"),
+              eq(
+                s.platformVariants.personalSourceVersionId,
+                data.expectedVersionId,
+              ),
             ),
           );
         for (const personal of personalMirrors)
-          await audit(tx, actor, "PERSONAL_MIRROR_AUTO_APPROVED", personal.id, {
-            sourceVariantId: variantId,
-            sourceVersionId: data.expectedVersionId,
-          });
+          await audit(
+            tx,
+            actor,
+            "PERSONAL_CAPTION_SOURCE_APPROVED",
+            personal.id,
+            {
+              sourceVariantId: variantId,
+              sourceVersionId: data.expectedVersionId,
+            },
+          );
       }
     }
     await audit(tx, actor, decision, variantId, {
@@ -799,6 +1180,11 @@ export async function history(variantId: string) {
     .select()
     .from(s.publishingRecords)
     .where(eq(s.publishingRecords.platformVariantId, variantId));
+  const generations = await db
+    .select()
+    .from(s.captionGenerations)
+    .where(eq(s.captionGenerations.platformVariantId, variantId))
+    .orderBy(asc(s.captionGenerations.createdAt));
   return {
     variant,
     versions: versionList,
@@ -806,6 +1192,7 @@ export async function history(variantId: string) {
     comments: commentList,
     events,
     publishing,
+    generations,
   };
 }
 export async function dashboard() {
@@ -820,6 +1207,7 @@ export async function dashboard() {
   const canonical = variants.filter((v) => v.publishingAccount === "PLIRIS");
   return {
     items,
+    captionAiAvailable: captionAiConfigured(),
     coverage: coverage(canonical),
     counts: {
       review: canonical.filter((v) => v.reviewStatus === "READY_FOR_REVIEW")

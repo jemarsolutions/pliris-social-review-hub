@@ -21,6 +21,8 @@ Optional server-to-server callers pass `Authorization: Bearer <INTERNAL_API_KEY>
 | POST   | `/content/:id/platform-variants`          | Producer creates one platform/format draft                                 |
 | PATCH  | `/platform-variants/:id`                  | Producer creates a new payload version if changed                          |
 | POST   | `/platform-variants/:id/plan`             | Producer changes operational planned time                                  |
+| POST   | `/platform-variants/:id/personal-caption` | Producer saves personal caption and optional readiness                     |
+| POST   | `/platform-variants/:id/generate-caption` | Producer generates a persisted personal AI draft                           |
 | POST   | `/platform-variants/:id/submit-review`    | Producer submits draft/in-production version                               |
 | POST   | `/platform-variants/:id/approve`          | Reviewer approves exact current pending version                            |
 | POST   | `/platform-variants/:id/request-revision` | Reviewer; reason required                                                  |

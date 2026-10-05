@@ -731,6 +731,7 @@ export function Hub({
               item={selected.item}
               variant={selected.variant}
               reviewer={!producer}
+              captionAiAvailable={data.captionAiAvailable}
               refresh={refresh}
               onEdit={() => {
                 setEditing(selected);
@@ -875,6 +876,29 @@ function ContentAdaptations({
         <span className="format-badge">{variant.wcsContentId}</span>
       )}
       <span className="format-badge">{label(variant.contentFormat)}</span>
+      <span className="format-badge">
+        Personal{" "}
+        {
+          item.variants.filter(
+            (personal) =>
+              personal.publishingAccount === "PERSONAL" &&
+              personal.platform === variant.platform &&
+              personal.contentFormat === variant.contentFormat &&
+              personal.personalCaptionStatus === "READY" &&
+              personal.personalSourceVersionId === variant.currentVersionId,
+          ).length
+        }
+        /
+        {
+          item.variants.filter(
+            (personal) =>
+              personal.publishingAccount === "PERSONAL" &&
+              personal.platform === variant.platform &&
+              personal.contentFormat === variant.contentFormat,
+          ).length
+        }{" "}
+        ready
+      </span>
       <Status value={effectiveStatus(variant)} />
     </Button>
   );

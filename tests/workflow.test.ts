@@ -1,4 +1,9 @@
-import { beforeAll, describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect, vi } from "vitest";
+vi.mock("../src/lib/personal-captions", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../src/lib/personal-captions")>();
+  return { ...original, draftPersonalCaption: vi.fn() };
+});
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +15,7 @@ process.env.LOCAL_DB_PATH = join(
   "db",
 );
 delete process.env.DATABASE_URL;
+delete process.env.AI_GATEWAY_API_KEY;
 process.env.AUTH_SECRET = crypto.randomUUID() + crypto.randomUUID();
 process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
 const { getDb } = await import("../src/db/index");
@@ -20,6 +26,8 @@ const { getAppBaseUrl, getTrustedAppOrigins, isTrustedAppOrigin } =
   await import("../src/lib/app-origin");
 const routes = await import("../src/app/api/v1/[...path]/route");
 const mediaRoute = await import("../src/app/api/media/[id]/route");
+const { draftPersonalCaption } = await import("../src/lib/personal-captions");
+const service = await import("../src/lib/service");
 let adminCookie = "",
   johnCookie = "",
   producerCookie = "";
@@ -306,7 +314,10 @@ describe("Required three-platform workflow through authenticated API", () => {
     const items = await call("content");
     expect(
       items.data[0].variants
-        .filter((v: { platform: string }) => v.platform !== "INSTAGRAM")
+        .filter(
+          (v: { platform: string; publishingAccount: string }) =>
+            v.platform !== "INSTAGRAM" && v.publishingAccount === "PLIRIS",
+        )
         .every((v: { reviewStatus: string }) => v.reviewStatus === "APPROVED"),
     ).toBe(true);
     const approved = await call(
@@ -323,7 +334,8 @@ describe("Required three-platform workflow through authenticated API", () => {
         (v: { publishingAccountName: string }) =>
           v.publishingAccountName === "Royal · INSTAGRAM",
       );
-    expect(mirror.reviewStatus).toBe("APPROVED");
+    expect(mirror.reviewStatus).toBe("DRAFT");
+    expect(mirror.personalCaptionStatus).toBe("NOT_GENERATED");
   });
   it("John approves Instagram v2; no scheduling or publishing occurs, calendar and coverage agree", async () => {
     const calendar = await call("calendar");
@@ -503,7 +515,10 @@ describe("Integrity and authorization", () => {
     const items = await call("content");
     expect(
       items.data[0].variants
-        .filter((v: { platform: string }) => v.platform !== "INSTAGRAM")
+        .filter(
+          (v: { platform: string; publishingAccount: string }) =>
+            v.platform !== "INSTAGRAM" && v.publishingAccount === "PLIRIS",
+        )
         .every((v: { reviewStatus: string }) => v.reviewStatus === "APPROVED"),
     ).toBe(true);
   });
@@ -1028,7 +1043,7 @@ describe("WCS source IDs and LinkedIn text posts", () => {
       expect(mirror.wcsContentId).toBeNull();
       expect(mirror.contentFormat).toBe("TEXT_POST");
       expect(mirror.version.caption).toBe(source.caption);
-      expect(mirror.version.ctaText).toBe(source.ctaText);
+      expect(mirror.version.ctaText).toBe("");
       expect(mirror.version.media).toHaveLength(0);
       expect(mirror.plannedPublishAt).toBe(source.plannedPublishAt);
     }
@@ -1095,8 +1110,7 @@ describe("WCS source IDs and LinkedIn text posts", () => {
         )
         .every(
           (v: { reviewStatus: string; publishingStatus: string }) =>
-            v.reviewStatus === "APPROVED" &&
-            v.publishingStatus === "UNSCHEDULED",
+            v.reviewStatus === "DRAFT" && v.publishingStatus === "UNSCHEDULED",
         ),
     ).toBe(true);
   });
@@ -1160,5 +1174,282 @@ describe("WCS source IDs and LinkedIn text posts", () => {
         })
       ).status,
     ).toBe(422);
+  });
+});
+
+describe("Personal repost captions", () => {
+  let itemId: string,
+    sourceId: string,
+    sourceVersion: string,
+    johnId: string,
+    royalId: string;
+  const getItem = async () => (await call(`content/${itemId}`)).data;
+  const getPersonal = async (id: string) =>
+    (await getItem()).variants.find((v: { id: string }) => v.id === id);
+  const result = (caption: string) =>
+    ({
+      caption,
+      model: "test/model",
+      usage: { inputTokens: 100, outputTokens: 30, totalTokens: 130 },
+    }) as Awaited<ReturnType<typeof draftPersonalCaption>>;
+
+  it("creates personal drafts and requires human readiness despite company approval", async () => {
+    const item = await call("content", "POST", {
+      title: "Start with the site",
+      contentDate: "2026-10-06",
+    });
+    itemId = item.data.id;
+    const source = await call(`content/${itemId}/platform-variants`, "POST", {
+      platform: "FACEBOOK",
+      contentFormat: "IMAGE_POST",
+      plannedPublishAt: "2026-10-06T16:00:00Z",
+      caption:
+        "Good plans start with the site. Access, grading, drainage, and setbacks affect the plan.",
+      mediaIds: [state.media[0]],
+    });
+    sourceId = source.data.id;
+    sourceVersion = source.data.currentVersionId;
+    await call(`platform-variants/${sourceId}/submit-review`, "POST", {
+      expectedVersionId: sourceVersion,
+    });
+    await call(
+      `platform-variants/${sourceId}/approve`,
+      "POST",
+      { expectedVersionId: sourceVersion },
+      johnCookie,
+    );
+    const itemNow = await getItem();
+    johnId = itemNow.variants.find(
+      (v: { publishingAccountName: string }) =>
+        v.publishingAccountName === "John · FACEBOOK",
+    ).id;
+    royalId = itemNow.variants.find(
+      (v: { publishingAccountName: string }) =>
+        v.publishingAccountName === "Royal · FACEBOOK",
+    ).id;
+    const royal = await getPersonal(royalId);
+    expect(royal.reviewStatus).toBe("DRAFT");
+    const input = {
+      expectedVersionId: royal.currentVersionId,
+      expectedSourceVersionId: sourceVersion,
+      caption: "Early site decisions help avoid planning problems later.",
+      ready: true,
+    };
+    expect(
+      (
+        await call(
+          `platform-variants/${royalId}/personal-caption`,
+          "POST",
+          input,
+          johnCookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          `platform-variants/${sourceId}/personal-caption`,
+          "POST",
+          input,
+        )
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await call(`platform-variants/${royalId}/generate-caption`, "POST", {
+          expectedVersionId: royal.currentVersionId,
+          expectedSourceVersionId: sourceVersion,
+        })
+      ).status,
+    ).toBe(503);
+    expect(
+      (
+        await call(
+          `platform-variants/${royalId}/personal-caption`,
+          "POST",
+          input,
+        )
+      ).status,
+    ).toBe(201);
+    const saved = await getPersonal(royalId);
+    expect(saved.personalCaptionStatus).toBe("READY");
+    expect(saved.reviewStatus).toBe("APPROVED");
+    expect(saved.publishingStatus).toBe("UNSCHEDULED");
+    expect((await getPersonal(johnId)).personalCaptionStatus).toBe(
+      "NOT_GENERATED",
+    );
+    expect(
+      (
+        await call(
+          `platform-variants/${royalId}/personal-caption`,
+          "POST",
+          input,
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await call(`platform-variants/${royalId}/personal-caption`, "POST", {
+          ...input,
+          expectedVersionId: saved.currentVersionId,
+          caption: " ",
+        })
+      ).status,
+    ).toBe(422);
+  });
+
+  it("keeps custom copy, updates creative, and marks it outdated when the source changes", async () => {
+    const royal = await getPersonal(royalId);
+    const revised = await call(`platform-variants/${sourceId}`, "PATCH", {
+      expectedVersionId: sourceVersion,
+      caption: "Site access and drainage deserve attention early in the plan.",
+      mediaIds: [state.media[1]],
+    });
+    expect(revised.status).toBe(200);
+    sourceVersion = revised.data.currentVersionId;
+    const kept = await getPersonal(royalId);
+    expect(kept.version.caption).toBe(royal.version.caption);
+    expect(kept.version.media[0].id).toBe(state.media[1]);
+    expect(kept.personalCaptionStatus).toBe("OUTDATED");
+    expect(kept.reviewStatus).toBe("DRAFT");
+    expect(kept.personalCaptionEdited).toBe(true);
+    expect(
+      (
+        await call(`platform-variants/${royalId}/personal-caption`, "POST", {
+          expectedVersionId: kept.currentVersionId,
+          expectedSourceVersionId: royal.personalSourceVersionId,
+          caption: royal.version.caption,
+          ready: true,
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("automatically generates missing captions, preserves human edits, and persists AI history", async () => {
+    const [admin] = await getDb()
+      .select()
+      .from(s.user)
+      .where(eq(s.user.email, "mac@test.local"));
+    vi.mocked(draftPersonalCaption).mockReset();
+    vi.mocked(draftPersonalCaption).mockResolvedValue(
+      result(
+        "Understanding the site early can prevent problems further along in planning.",
+      ),
+    );
+    process.env.AI_GATEWAY_API_KEY = "test-only-key";
+    try {
+      await service.preparePersonalCaptions(
+        { id: admin.id, role: "ADMIN" },
+        sourceId,
+      );
+      expect(draftPersonalCaption).toHaveBeenCalledTimes(1);
+      const john = await getPersonal(johnId);
+      expect(john.personalCaptionStatus).toBe("NEEDS_REVIEW");
+      expect(john.reviewStatus).toBe("DRAFT");
+      expect(john.personalSourceVersionId).toBe(sourceVersion);
+      expect(john.version.caption).not.toBe(
+        (await getPersonal(royalId)).version.caption,
+      );
+      const history = await call(`platform-variants/${johnId}/history`);
+      expect(history.data.generations[0].status).toBe("COMPLETE");
+      expect(history.data.generations[0].result).toBe(john.version.caption);
+      expect(history.data.generations[0].usage.totalTokens).toBe(130);
+      await service.preparePersonalCaptions(
+        { id: admin.id, role: "ADMIN" },
+        sourceId,
+      );
+      expect(draftPersonalCaption).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.AI_GATEWAY_API_KEY;
+    }
+  });
+
+  it("rejects concurrent generation and keeps a newer human edit instead of stale AI output", async () => {
+    const john = await getPersonal(johnId);
+    let finish!: (
+      value: Awaited<ReturnType<typeof draftPersonalCaption>>,
+    ) => void;
+    vi.mocked(draftPersonalCaption).mockReset();
+    vi.mocked(draftPersonalCaption).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    process.env.AI_GATEWAY_API_KEY = "test-only-key";
+    try {
+      const input = {
+        expectedVersionId: john.currentVersionId,
+        expectedSourceVersionId: sourceVersion,
+      };
+      const pending = call(
+        `platform-variants/${johnId}/generate-caption`,
+        "POST",
+        input,
+      );
+      await vi.waitFor(() =>
+        expect(draftPersonalCaption).toHaveBeenCalledTimes(1),
+      );
+      expect(
+        (
+          await call(
+            `platform-variants/${johnId}/generate-caption`,
+            "POST",
+            input,
+          )
+        ).status,
+      ).toBe(409);
+      expect(
+        (
+          await call(`platform-variants/${johnId}/personal-caption`, "POST", {
+            ...input,
+            caption:
+              "My checked caption takes priority over a pending AI draft.",
+            ready: true,
+          })
+        ).status,
+      ).toBe(201);
+      finish(result("An older AI draft that should remain in history only."));
+      expect((await pending).status).toBe(409);
+      const kept = await getPersonal(johnId);
+      expect(kept.version.caption).toBe(
+        "My checked caption takes priority over a pending AI draft.",
+      );
+      expect(kept.personalCaptionStatus).toBe("READY");
+      const history = await call(`platform-variants/${johnId}/history`);
+      expect(history.data.generations.at(-1).status).toBe("SUPERSEDED");
+      expect(history.data.generations.at(-1).result).toContain(
+        "older AI draft",
+      );
+    } finally {
+      delete process.env.AI_GATEWAY_API_KEY;
+    }
+  });
+
+  it("records a failed generation while preserving the last saved caption", async () => {
+    const john = await getPersonal(johnId);
+    vi.mocked(draftPersonalCaption).mockRejectedValueOnce(
+      new Error("Provider failure containing private details"),
+    );
+    process.env.AI_GATEWAY_API_KEY = "test-only-key";
+    try {
+      const failed = await call(
+        `platform-variants/${johnId}/generate-caption`,
+        "POST",
+        {
+          expectedVersionId: john.currentVersionId,
+          expectedSourceVersionId: sourceVersion,
+        },
+      );
+      expect(failed.status).toBe(502);
+      expect(failed.error.message).not.toContain("private details");
+      const kept = await getPersonal(johnId);
+      expect(kept.version.caption).toBe(john.version.caption);
+      expect(kept.personalCaptionStatus).toBe("FAILED");
+      const history = await call(`platform-variants/${johnId}/history`);
+      expect(history.data.generations.at(-1).status).toBe("FAILED");
+    } finally {
+      delete process.env.AI_GATEWAY_API_KEY;
+    }
   });
 });

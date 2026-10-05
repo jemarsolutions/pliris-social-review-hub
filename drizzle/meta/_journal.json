@@ -64,6 +64,13 @@
       "when": 1789840000000,
       "tag": "0008_wcs_ids_and_text_posts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791244800000,
+      "tag": "0009_personal_captions",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { PersonalCaptionCard } from "./personal-caption-card";
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,12 +41,14 @@ export function Review({
   reviewer,
   refresh,
   onEdit,
+  captionAiAvailable,
 }: {
   item: Item;
   variant: Variant;
   reviewer: boolean;
   refresh: () => Promise<void>;
   onEdit: () => void;
+  captionAiAvailable: boolean;
 }) {
   const [history, setHistory] = useState<History | null>(null),
     [versionId, setVersionId] = useState(variant.currentVersionId),
@@ -71,6 +74,18 @@ export function Review({
     setPreviewVariant(variant);
   }, [variant.id, variant.currentVersionId, variant.reviewStatus]);
   useEffect(() => setTimeZone(browserTimeZone()), []);
+  useEffect(() => {
+    setPreviewVariant((previous) =>
+      previous.id === variant.id
+        ? variant
+        : item.variants.find((candidate) => candidate.id === previous.id) ||
+          variant,
+    );
+  }, [item, variant]);
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
   const version =
     history?.versions.find((v) => v.id === versionId) || variant.version;
   const current = version.id === variant.currentVersionId;
@@ -100,13 +115,34 @@ export function Review({
       : variant.publishingStatus === "SCHEDULED"
         ? scheduledRecord?.scheduledAt
         : null;
-  const personalVariants = item.variants.filter(
-    (candidate) =>
-      variant.publishingAccount === "PLIRIS" &&
-      candidate.publishingAccount === "PERSONAL" &&
-      candidate.platform === variant.platform &&
-      candidate.contentFormat === variant.contentFormat,
+  const personalVariants = item.variants
+    .filter(
+      (candidate) =>
+        variant.publishingAccount === "PLIRIS" &&
+        candidate.publishingAccount === "PERSONAL" &&
+        candidate.platform === variant.platform &&
+        candidate.contentFormat === variant.contentFormat,
+    )
+    .sort((a, b) =>
+      a.publishingAccountName.localeCompare(b.publishingAccountName),
+    );
+  const pendingCaptions = personalVariants.some((personal) =>
+    ["NOT_GENERATED", "GENERATING"].includes(personal.personalCaptionStatus),
   );
+  useEffect(() => {
+    if (tab !== "Personal" || !captionAiAvailable || !pendingCaptions) return;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      if (++ticks >= 25) clearInterval(timer);
+      void refreshRef.current().catch(() => {});
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [tab, captionAiAvailable, pendingCaptions, variant.id]);
+  const readyCaptions = personalVariants.filter(
+    (personal) =>
+      personal.personalCaptionStatus === "READY" &&
+      personal.personalSourceVersionId === variant.currentVersionId,
+  ).length;
   async function action(path: string, data: unknown) {
     setBusy(true);
     setError("");
@@ -337,13 +373,17 @@ export function Review({
         </div>
         {tab === "Personal" ? (
           <section className="personal-preview-panel">
-            <p className="eyebrow">PERSONAL SOCIAL MIRRORS</p>
-            <h3>Automatically follows this {label(variant.platform)} post</h3>
+            <p className="eyebrow">PERSONAL REPOST CAPTIONS</p>
+            <h3>
+              {readyCaptions}/{personalVariants.length} captions ready
+            </h3>
             <p>
-              John and Royal can use the same approved creative on their
-              personal accounts. These mirrors do not require a separate
-              approval decision.
+              Short captions for John and Royal, using this post’s creative.
+              Review each draft and mark it ready before sharing.
             </p>
+            {variant.reviewStatus !== "APPROVED" && (
+              <p>Waiting for approval of the PLIRIS post.</p>
+            )}
             <Button
               variant="outline"
               onClick={() => {
@@ -356,25 +396,18 @@ export function Review({
             </Button>
             <div className="personal-preview-list">
               {personalVariants.map((personal) => (
-                <button
-                  className={`personal-preview-item ${
-                    previewVariant.id === personal.id ? "selected" : ""
-                  }`}
+                <PersonalCaptionCard
                   key={personal.id}
-                  aria-pressed={previewVariant.id === personal.id}
-                  onClick={() => {
-                    setPreviewVariant(personal);
+                  personal={personal}
+                  source={variant}
+                  editable={!reviewer && current}
+                  aiAvailable={captionAiAvailable}
+                  refresh={refresh}
+                  onPreview={(preview) => {
+                    setPreviewVariant(preview);
                     setSlide(0);
                   }}
-                >
-                  <div>
-                    <strong>{personal.publishingAccountName}</strong>
-                    <small>
-                      {label(personal.contentFormat)} · Follows PLIRIS
-                    </small>
-                  </div>
-                  <span className="sync-state">Auto-synced</span>
-                </button>
+                />
               ))}
             </div>
           </section>
@@ -617,10 +650,10 @@ export function Review({
             )}
             {current && variant.publishingAccount === "PERSONAL" && (
               <section className="review-actions">
-                <h3>Personal mirror</h3>
+                <h3>Personal repost</h3>
                 <p>
-                  This post follows the approved PLIRIS adaptation and does not
-                  require a separate review decision.
+                  Review and edit this caption from the original PLIRIS post’s
+                  Personal tab.
                 </p>
               </section>
             )}
@@ -706,6 +739,27 @@ export function Review({
               </div>
             ))}
             <h3>Activity</h3>
+            {!!history?.generations?.length && (
+              <>
+                <h3>AI caption drafts</h3>
+                {history.generations
+                  .slice()
+                  .reverse()
+                  .map((generation) => (
+                    <div className="timeline-event" key={generation.id}>
+                      <strong>
+                        {label(generation.status)} · {generation.model}
+                      </strong>
+                      {generation.result && (
+                        <blockquote>{generation.result}</blockquote>
+                      )}
+                      <small>
+                        {new Date(generation.createdAt).toLocaleString()}
+                      </small>
+                    </div>
+                  ))}
+              </>
+            )}
             {history?.events
               .slice()
               .reverse()

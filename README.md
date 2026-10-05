@@ -157,6 +157,37 @@ No paid plan has been enabled or requested. This is a personal prototype. If PLI
 
 ## Documentation and Phase 2
 
+### Personal repost captions
+
+John and Royal share the PLIRIS creative with separate short captions in the
+Personal tab. Producers can write or edit a caption, save a draft, mark it ready,
+preview it, copy it, and inspect saved/AI history. Company approval alone does not
+mark unreviewed personal copy ready. A source change updates the creative while
+keeping personalized text and flags it for another check.
+
+Apply migration `0009_personal_captions` before deploying this version. It adds
+caption readiness/source tracking and generation history while preserving old
+caption versions. Existing copy that differs from its company source is kept as
+a manually edited draft.
+
+Set server-only `AI_GATEWAY_API_KEY` to enable AI drafting. Optionally set
+`PERSONAL_CAPTION_MODEL` (default `openai/gpt-6.1-sol`, verified against the Gateway
+model catalog). Add these values to the intended deployment environment and local
+environment as needed; never expose the key through a `NEXT_PUBLIC_` variable.
+The account voices and supplied style examples are in
+`src/lib/personal-captions.ts`.
+
+New PLIRIS variants prepare personal captions after the response. Source edits
+and approvals retry missing/outdated AI drafts while preserving human edits.
+Explicit regeneration asks before replacing existing/unsaved copy. Every paid
+output and usage record is stored, including results superseded by concurrent
+edits. Failed generation can be retried or replaced with manual copy. With no
+key, manual drafting stays available and no model calls are made.
+
+Generation uses two bounded calls (one per account), with no automatic provider
+retries. Configure the chosen provider's budget/credits when enabling it.
+Native social publication remains the existing external/manual workflow.
+
 - `docs/API.md`: versioned endpoints, auth, examples, error contract.
 - `docs/VERIFICATION.md`: tests, P0 checklist and limits.
 - `docs/ROADMAP.md`: bounded P1/P2 work.

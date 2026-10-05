@@ -129,6 +129,14 @@ export const platformVariants = pgTable(
       .notNull()
       .default("UNSCHEDULED"),
     currentVersionId: text("current_version_id"),
+    personalSourceVersionId: text("personal_source_version_id"),
+    personalGenerationId: text("personal_generation_id"),
+    personalCaptionStatus: text("personal_caption_status")
+      .notNull()
+      .default("NOT_GENERATED"),
+    personalCaptionEdited: boolean("personal_caption_edited")
+      .notNull()
+      .default(false),
     createdAt: created(),
     updatedAt: updated(),
   },
@@ -151,6 +159,23 @@ export const platformVariants = pgTable(
     ),
   ],
 );
+export const captionGenerations = pgTable("caption_generations", {
+  id: text("id").primaryKey(),
+  platformVariantId: text("platform_variant_id")
+    .notNull()
+    .references(() => platformVariants.id),
+  sourceVersionId: text("source_version_id").notNull(),
+  createdBy: text("created_by")
+    .notNull()
+    .references(() => user.id),
+  model: text("model").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  result: text("result"),
+  usage: jsonb("usage").$type<Record<string, unknown>>(),
+  error: text("error"),
+  createdAt: created(),
+  updatedAt: updated(),
+});
 export const mediaAssets = pgTable("media_assets", {
   id: text("id").primaryKey(),
   cloudinaryPublicId: text("cloudinary_public_id").unique(),

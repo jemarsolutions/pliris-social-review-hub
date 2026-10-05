@@ -40,6 +40,9 @@ export type Variant = {
   reviewStatus: string;
   publishingStatus: string;
   currentVersionId: string;
+  personalSourceVersionId: string | null;
+  personalCaptionStatus: string;
+  personalCaptionEdited: boolean;
   version: Version;
 };
 export type Item = {
@@ -52,6 +55,7 @@ export type Item = {
   variants: Variant[];
 };
 export type HubData = {
+  captionAiAvailable: boolean;
   items: Item[];
   coverage: {
     approved: number;
@@ -67,6 +71,14 @@ export type HubData = {
   };
 };
 export type History = {
+  generations: {
+    id: string;
+    sourceVersionId: string;
+    model: string;
+    status: string;
+    result: string | null;
+    createdAt: string;
+  }[];
   variant: Variant;
   versions: Version[];
   decisions: {

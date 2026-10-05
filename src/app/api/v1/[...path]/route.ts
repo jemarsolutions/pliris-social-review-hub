@@ -2,8 +2,11 @@ import { authenticate, apiError } from "@/lib/api-auth";
 import { AppError, coverage } from "@/lib/domain";
 import * as service from "@/lib/service";
 import { completeVideoUpload, signVideoUpload, uploadMedia } from "@/lib/media";
+import { after } from "next/server";
+import { captionAiConfigured } from "@/lib/personal-captions";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 type Context = { params: Promise<{ path: string[] }> };
 async function route(req: Request, ctx: Context) {
   try {
@@ -41,7 +44,9 @@ async function route(req: Request, ctx: Context) {
           data = p[1] ? items.find((i) => i.id === p[1]) : items;
           if (!data) throw new AppError(404, "Content not found.");
         } else if (p[0] === "coverage")
-          data = coverage(variants.filter((v) => v.publishingAccount === "PLIRIS"));
+          data = coverage(
+            variants.filter((v) => v.publishingAccount === "PLIRIS"),
+          );
         else if (p[0] === "calendar") {
           const url = new URL(req.url);
           const start = url.searchParams.get("start"),
@@ -62,9 +67,9 @@ async function route(req: Request, ctx: Context) {
             (v) =>
               v.publishingAccount === "PLIRIS" &&
               v.reviewStatus ===
-              (p[0] === "review-queue"
-                ? "READY_FOR_REVIEW"
-                : "CHANGES_REQUESTED"),
+                (p[0] === "review-queue"
+                  ? "READY_FOR_REVIEW"
+                  : "CHANGES_REQUESTED"),
           );
       } else if (p[0] === "platform-variants" && p[1] && p[2] === "history")
         data = await service.history(p[1]);
@@ -101,6 +106,16 @@ async function route(req: Request, ctx: Context) {
           data = await service.editVariant(actor, variantId, input);
         else if (method === "POST") {
           switch (p[2]) {
+            case "personal-caption":
+              data = await service.savePersonalCaption(actor, variantId, input);
+              break;
+            case "generate-caption":
+              data = await service.generatePersonalCaption(
+                actor,
+                variantId,
+                input,
+              );
+              break;
             case "submit-review":
               data = await service.submitReview(
                 actor,
@@ -140,6 +155,29 @@ async function route(req: Request, ctx: Context) {
           }
         } else throw new AppError(405, "Method not allowed.");
       } else throw new AppError(404, "Endpoint not found.");
+    }
+    if (
+      captionAiConfigured() &&
+      data &&
+      typeof data === "object" &&
+      "id" in data &&
+      ((method === "POST" &&
+        p[0] === "content" &&
+        p[2] === "platform-variants") ||
+        (p[0] === "platform-variants" &&
+          ((method === "PATCH" && p.length === 2) ||
+            (method === "POST" && p[2] === "approve"))))
+    ) {
+      const sourceId = String(data.id);
+      after(async () => {
+        try {
+          await service.preparePersonalCaptions(actor, sourceId);
+        } catch {
+          console.error(
+            "Personal caption preparation failed; retry from the Personal tab.",
+          );
+        }
+      });
     }
     return Response.json(
       { data },
