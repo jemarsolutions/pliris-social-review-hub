@@ -1,20 +1,11 @@
 import { createGateway, generateText, Output } from "ai";
 import { z } from "zod";
 import { AppError } from "./domain";
+import { captionVoices, personalCaptionVoice } from "./personal-caption-prompt";
+
+export { captionVoices } from "./personal-caption-prompt";
 
 export const personalCaptionSchema = z.string().trim().min(1).max(1200);
-export const captionVoices = {
-  John: {
-    tone: "Clear, thoughtful, practical. Focus on avoiding planning problems and making sound early decisions.",
-    example:
-      "A lot of planning problems can be avoided by understanding the site early. Access, grading, drainage, setbacks, and surrounding conditions all affect what comes next. Getting those things clear at the start makes the rest of the plan stronger.",
-  },
-  Royal: {
-    tone: "Conversational, direct, accessible. Explain why the topic matters in everyday planning terms.",
-    example:
-      "The site is where a lot of the important decisions begin. Before focusing only on the building, it helps to understand the access, grades, drainage, setbacks, and surrounding conditions. Those early decisions can make a big difference later.",
-  },
-} as const;
 
 // Require an explicit dedicated key: an unrelated/stale deployment token should
 // never silently enable paid generation during local development or tests.
@@ -37,11 +28,7 @@ export async function draftPersonalCaption(input: {
     );
   // Account labels are displayed as `John · INSTAGRAM`. Resolve the voice from
   // the account prefix so separator/encoding differences cannot break it.
-  const name = (
-    Object.keys(captionVoices) as Array<keyof typeof captionVoices>
-  ).find((candidate) =>
-    input.accountName.trim().toLowerCase().startsWith(candidate.toLowerCase()),
-  );
+  const name = personalCaptionVoice(input.accountName);
   if (!name)
     throw new AppError(422, "No caption voice is configured for this account.");
   const voice = captionVoices[name];

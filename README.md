@@ -165,6 +165,15 @@ preview it, copy it, and inspect saved/AI history. Company approval alone does n
 mark unreviewed personal copy ready. A source change updates the creative while
 keeping personalized text and flags it for another check.
 
+To draft with an existing ChatGPT account without the Hub's AI Gateway, click
+**Copy ChatGPT prompt** on a Personal card, open ChatGPT, and paste the prompt.
+It includes the current PLIRIS source caption, platform, post title, and the
+selected account's voice. Paste only the finished caption back into the card,
+then **Save draft**, review, and **Mark ready**. If clipboard access is blocked,
+the card displays a selectable prompt for manual copying. Copying a prompt does
+not send it to ChatGPT, call a model, change a caption, or mark it ready. The
+**Open ChatGPT** link opens ChatGPT without passing any post content in the URL.
+
 Apply migration `0009_personal_captions` before deploying this version. It adds
 caption readiness/source tracking and generation history while preserving old
 caption versions. Existing copy that differs from its company source is kept as
@@ -175,7 +184,7 @@ Set server-only `AI_GATEWAY_API_KEY` to enable AI drafting. Optionally set
 model catalog). Add these values to the intended deployment environment and local
 environment as needed; never expose the key through a `NEXT_PUBLIC_` variable.
 The account voices and supplied style examples are in
-`src/lib/personal-captions.ts`.
+`src/lib/personal-caption-prompt.ts` (shared by manual prompts and built-in AI).
 
 New PLIRIS variants prepare personal captions after the response. Source edits
 and approvals retry missing/outdated AI drafts while preserving human edits.

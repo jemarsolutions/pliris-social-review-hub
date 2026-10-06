@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 import { Copy, Eye, Sparkles, Check } from "lucide-react";
 import { api, type Variant, type History } from "./types";
 import { Button } from "./ui/button";
+import { buildChatGptCaptionPrompt } from "@/lib/personal-caption-prompt";
 
 export function PersonalCaptionCard({
   personal,
   source,
+  title,
   editable,
   aiAvailable,
   onPreview,
@@ -14,6 +16,7 @@ export function PersonalCaptionCard({
 }: {
   personal: Variant;
   source: Variant;
+  title: string;
   editable: boolean;
   aiAvailable: boolean;
   onPreview: (variant: Variant) => void;
@@ -33,6 +36,19 @@ export function PersonalCaptionCard({
   const [replace, setReplace] = useState(false);
   const [history, setHistory] = useState<History | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [promptFeedback, setPromptFeedback] = useState<{
+    prompt: string;
+    status: "copied" | "failed";
+  } | null>(null);
+  const chatGptPrompt = buildChatGptCaptionPrompt({
+    accountName: personal.publishingAccountName,
+    platform: personal.platform,
+    title: source.version.headline || title,
+    caption: source.version.caption,
+  });
+  // Feedback applies only to the source that was actually copied.
+  const promptStatus =
+    promptFeedback?.prompt === chatGptPrompt ? promptFeedback?.status : null;
   useEffect(() => {
     if (!dirty) {
       setCaption(initialCaption);
@@ -150,6 +166,81 @@ export function PersonalCaptionCard({
         />
       </label>
       <small>{caption.length}/1200 characters · Same PLIRIS creative</small>
+      {editable && (
+        <section
+          className="personal-caption-chatgpt"
+          aria-label={`${personal.publishingAccountName} ChatGPT drafting`}
+        >
+          <strong>Draft with your ChatGPT account</strong>
+          <p className="personal-caption-notice">
+            Copy the prompt and paste it into ChatGPT. Paste the finished
+            caption into the field above, save the draft, then review it before
+            marking ready. This does not use the Hub’s AI Gateway.
+          </p>
+          <div className="personal-caption-actions">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!chatGptPrompt}
+              onClick={async () => {
+                if (!chatGptPrompt) return;
+                setPromptFeedback(null);
+                try {
+                  await navigator.clipboard.writeText(chatGptPrompt);
+                  setPromptFeedback({
+                    prompt: chatGptPrompt,
+                    status: "copied",
+                  });
+                } catch {
+                  setPromptFeedback({
+                    prompt: chatGptPrompt,
+                    status: "failed",
+                  });
+                }
+              }}
+            >
+              <Copy size={15} /> Copy ChatGPT prompt
+            </Button>
+            <Button asChild variant="outline">
+              <a
+                href="https://chatgpt.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open ChatGPT
+              </a>
+            </Button>
+          </div>
+          {!chatGptPrompt && (
+            <p className="personal-caption-notice">
+              A PLIRIS source caption and a configured account voice are needed
+              to prepare this prompt.
+            </p>
+          )}
+          {promptStatus === "copied" && (
+            <p className="personal-caption-notice" role="status">
+              Prompt copied. Paste it into ChatGPT to generate your draft.
+            </p>
+          )}
+          {promptStatus === "failed" && (
+            <>
+              <p className="personal-caption-notice" role="alert">
+                Clipboard access was blocked. Select and copy the prompt below.
+              </p>
+              <label>
+                ChatGPT prompt — copy manually
+                <textarea
+                  aria-label={`${personal.publishingAccountName} ChatGPT prompt`}
+                  rows={8}
+                  readOnly
+                  value={chatGptPrompt || ""}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+            </>
+          )}
+        </section>
+      )}
       {changed && (
         <p role="alert">
           This post changed while you were editing. Copy your draft, then reopen
@@ -263,8 +354,8 @@ export function PersonalCaptionCard({
       )}
       {!aiAvailable && editable && (
         <p className="personal-caption-notice">
-          AI generation needs configuration. You can write, save, and copy
-          captions now.
+          Built-in AI generation needs configuration. You can use the ChatGPT
+          prompt above or write, save, and copy captions now.
         </p>
       )}
       {showHistory && history && (

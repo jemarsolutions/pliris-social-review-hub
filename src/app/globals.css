@@ -1385,6 +1385,15 @@ body.theme-dark .platform-tiktok svg {
   line-height: 1.5;
   margin: 0;
 }
+.personal-caption-chatgpt {
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+  border-block: 1px solid #d5e3e5;
+}
+body.theme-dark .personal-caption-chatgpt {
+  border-color: #34505b;
+}
 .personal-caption-history {
   max-height: 300px;
   overflow-y: auto;

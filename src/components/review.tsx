@@ -400,6 +400,7 @@ export function Review({
                   key={personal.id}
                   personal={personal}
                   source={variant}
+                  title={item.title}
                   editable={!reviewer && current}
                   aiAvailable={captionAiAvailable}
                   refresh={refresh}
