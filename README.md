@@ -171,7 +171,7 @@ caption versions. Existing copy that differs from its company source is kept as
 a manually edited draft.
 
 Set server-only `AI_GATEWAY_API_KEY` to enable AI drafting. Optionally set
-`PERSONAL_CAPTION_MODEL` (default `openai/gpt-6.1-sol`, verified against the Gateway
+`PERSONAL_CAPTION_MODEL` (default `openai/gpt-5.4`, verified against the Gateway
 model catalog). Add these values to the intended deployment environment and local
 environment as needed; never expose the key through a `NEXT_PUBLIC_` variable.
 The account voices and supplied style examples are in

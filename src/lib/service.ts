@@ -21,6 +21,7 @@ import {
 } from "./validation";
 import type { ContentFormatValue, PlatformValue } from "./platform-config";
 import { z } from "zod";
+import { captionGenerationFailure } from "./caption-generation-error";
 import {
   captionAiConfigured,
   captionModel,
@@ -707,6 +708,7 @@ async function runCaptionGeneration(
     return { personal, version, item };
   });
   if (!claimed) return { skipped: true };
+  let stage = "provider";
   try {
     const result = await draftPersonalCaption({
       accountName: claimed.personal.publishingAccountName,
@@ -716,6 +718,7 @@ async function runCaptionGeneration(
     });
     // Persist the result even if a concurrent source/personal edit means it cannot
     // be applied. History keeps this paid output retrievable.
+    stage = "save_generation";
     await getDb()
       .update(s.captionGenerations)
       .set({
@@ -725,6 +728,7 @@ async function runCaptionGeneration(
         updatedAt: new Date(),
       })
       .where(eq(s.captionGenerations.id, generationId));
+    stage = "apply_caption";
     return await getDb().transaction(async (tx) => {
       const currentSource = await lock(tx, source.id);
       const personal = await lock(tx, personalId);
@@ -780,6 +784,21 @@ async function runCaptionGeneration(
       return updated;
     });
   } catch (error) {
+    const failure = captionGenerationFailure(error);
+    const failureMessage =
+      error instanceof AppError
+        ? error.message
+        : stage === "provider"
+          ? failure.message
+          : "The AI draft could not be saved. Please check the caption generation runtime log.";
+    console.error("Personal caption generation failed", {
+      generationId,
+      stage,
+      category: error instanceof AppError ? "workflow" : failure.category,
+      errorNames: failure.errorNames,
+      upstreamStatus: failure.upstreamStatus,
+      providerCode: failure.providerCode,
+    });
     await getDb()
       .update(s.captionGenerations)
       .set({
@@ -787,10 +806,7 @@ async function runCaptionGeneration(
           error instanceof AppError && error.status === 409
             ? "SUPERSEDED"
             : "FAILED",
-        error:
-          error instanceof AppError
-            ? error.message
-            : "AI generation failed. Try again or write the caption manually.",
+        error: failureMessage,
         updatedAt: new Date(),
       })
       .where(eq(s.captionGenerations.id, generationId));
@@ -810,10 +826,7 @@ async function runCaptionGeneration(
         ),
       );
     if (error instanceof AppError) throw error;
-    throw new AppError(
-      502,
-      "AI generation failed. Try again or write the caption manually.",
-    );
+    throw new AppError(502, failureMessage);
   }
 }
 

@@ -37,15 +37,18 @@ export async function draftPersonalCaption(input: {
     );
   // Account labels are displayed as `John · INSTAGRAM`. Resolve the voice from
   // the account prefix so separator/encoding differences cannot break it.
-  const name = (Object.keys(captionVoices) as Array<keyof typeof captionVoices>).find(
-    (candidate) =>
-      input.accountName.trim().toLowerCase().startsWith(candidate.toLowerCase()),
+  const name = (
+    Object.keys(captionVoices) as Array<keyof typeof captionVoices>
+  ).find((candidate) =>
+    input.accountName.trim().toLowerCase().startsWith(candidate.toLowerCase()),
   );
   if (!name)
     throw new AppError(422, "No caption voice is configured for this account.");
   const voice = captionVoices[name];
   const model = captionModel();
-  const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
+  const gateway = createGateway({
+    apiKey: process.env.AI_GATEWAY_API_KEY?.trim(),
+  });
   const result = await generateText({
     model: gateway(model),
     output: Output.object({
