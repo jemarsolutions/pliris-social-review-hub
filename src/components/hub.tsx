@@ -27,6 +27,7 @@ import {
   formatLocalDate,
   localDateKey,
 } from "@/lib/date-time";
+import { sortPublishedGroups } from "@/lib/domain";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -192,15 +193,15 @@ export function Hub({
       return groups;
     }, new Map<string, { item: Item; variant: Variant }[]>()),
   ).sort(([a], [b]) => a.localeCompare(b));
-  const publishedGroups = Array.from(
-    visible.reduce((groups, entry) => {
-      const group = groups.get(entry.item.id) || [];
-      group.push(entry);
-      groups.set(entry.item.id, group);
-      return groups;
-    }, new Map<string, { item: Item; variant: Variant }[]>()),
-  ).sort(([, a], [, b]) =>
-    a[0].item.contentDate.localeCompare(b[0].item.contentDate),
+  const publishedGroups = sortPublishedGroups(
+    Array.from(
+      visible.reduce((groups, entry) => {
+        const group = groups.get(entry.item.id) || [];
+        group.push(entry);
+        groups.set(entry.item.id, group);
+        return groups;
+      }, new Map<string, { item: Item; variant: Variant }[]>()),
+    ),
   );
   const activeContentItems = data.items.filter(
     (item) =>

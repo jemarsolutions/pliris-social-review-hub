@@ -57,3 +57,13 @@ export function coverage<
         )[0] || null,
   };
 }
+
+export function sortPublishedGroups<
+  T extends { item: { contentDate: Date | string } },
+>(groups: [string, T[]][]) {
+  return groups.sort(([, aEntries], [, bEntries]) => {
+    const aDate = new Date(aEntries[0]?.item?.contentDate ?? 0).getTime();
+    const bDate = new Date(bEntries[0]?.item?.contentDate ?? 0).getTime();
+    return bDate - aDate;
+  });
+}
